@@ -1,0 +1,77 @@
+﻿# ==========================================================
+# Personal Finance SaaS - Git Ignore
+# ==========================================================
+
+# Python virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.class
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Local database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+
+# Uploads / generated user files
+uploads/
+media/
+storage/
+generated/
+exports/
+reports/
+
+# Alembic / migration temporary files
+*.egg-info/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker local override files
+docker-compose.override.yml
+
+# Node / frontend if added later
+node_modules/
+dist/
+build/
+.next/
+
+# Large/private planning or local notes
+AI Personal Finance SaaS — World-Cl.txt
+Database_sitting.txt
+Find_Server.txt
+prompt_*.txt
+
+# Backup files
+*.bak
+*.tmp
+*.old

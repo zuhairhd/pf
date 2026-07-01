@@ -1,0 +1,59 @@
+from pydantic_settings import BaseSettings
+from functools import lru_cache
+
+
+class Settings(BaseSettings):
+    """Application settings loaded from environment variables."""
+    
+    # Application
+    APP_NAME: str = "PF AI Personal Finance"
+    APP_ENV: str = "development"
+    DEBUG: bool = True
+    SECRET_KEY: str = "change-me-in-production"
+    
+    # Database
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/pf_ai"
+    DATABASE_URL_SYNC: str = "postgresql://postgres:postgres@localhost:5432/pf_ai"
+    
+    # Redis
+    REDIS_URL: str = "redis://localhost:6379/0"
+    
+    # JWT
+    JWT_SECRET: str = "change-me-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRATION_MINUTES: int = 60 * 24 * 7  # 7 days
+    
+    # AI / OpenAI
+    OPENAI_API_KEY: str = ""
+    OPENAI_MODEL: str = "gpt-4o-mini"
+    OPENAI_MODEL_PREMIUM: str = "gpt-4o"
+    AI_MAX_REQUESTS_PER_DAY_FREE: int = 5
+    AI_MAX_REQUESTS_PER_DAY_PREMIUM: int = 50
+    
+    # Email
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    EMAIL_FROM: str = "noreply@pf-ai.com"
+    
+    # File Storage
+    UPLOAD_DIR: str = "uploads"
+    MAX_UPLOAD_SIZE_MB: int = 10
+    
+    # Stripe
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+    
+    # Frontend
+    CURRENCY_DEFAULT: str = "OMR"
+    CURRENCY_DECIMALS: int = 3
+    
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+
+
+@lru_cache()
+def get_settings() -> Settings:
+    return Settings()

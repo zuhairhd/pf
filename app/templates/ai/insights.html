@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}AI Insights - PF AI{% endblock %}
+{% block page_title %}AI Insights{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h5>AI-Generated Insights</h5>
+                <a href="/ai/chat" class="btn btn-primary btn-sm">
+                    <i class="bi bi-stars me-1"></i>Ask AI Coach
+                </a>
+            </div>
+            
+            {% if insights %}
+                {% for insight in insights %}
+                <div class="insight-card mb-3">
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="d-flex align-items-start">
+                                <div class="insight-priority priority-{{ insight.priority }} me-3">
+                                    <i class="bi bi-exclamation-circle"></i>
+                                </div>
+                                <div class="flex-grow-1">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <h6 class="mb-1">{{ insight.title }}</h6>
+                                        <span class="badge bg-{{ 'danger' if insight.priority == 'critical' else 'warning' if insight.priority == 'high' else 'info' }}">
+                                            {{ insight.priority|title }}
+                                        </span>
+                                    </div>
+                                    <p class="text-muted mb-2">{{ insight.message }}</p>
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-sm btn-outline-success" onclick="dismissInsight({{ insight.id }})">
+                                            <i class="bi bi-check me-1"></i>Got it
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-primary" onclick="askAboutInsight('{{ insight.title }}')">
+                                            <i class="bi bi-chat me-1"></i>Tell me more
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="card">
+                    <div class="card-body text-center py-5">
+                        <i class="bi bi-lightbulb fs-1 text-muted mb-3"></i>
+                        <h6>No insights yet</h6>
+                        <p class="text-muted">Start tracking your finances to receive AI-powered insights.</p>
+                        <a href="/transactions/" class="btn btn-primary btn-sm">Add Transaction</a>
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function dismissInsight(insightId) {
+    fetch(`/ai/insights/${insightId}/dismiss`, { method: 'POST' })
+        .then(() => location.reload());
+}
+
+function askAboutInsight(title) {
+    window.location.href = `/ai/chat?question=${encodeURIComponent('Tell me more about: ' + title)}`;
+}
+</script>
+{% endblock %}

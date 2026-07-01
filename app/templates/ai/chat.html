@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block title %}AI Coach - PF AI{% endblock %}
+{% block page_title %}AI Financial Coach{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card chat-card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center">
+                        <div class="ai-avatar me-2">
+                            <i class="bi bi-stars"></i>
+                        </div>
+                        <div>
+                            <h6 class="mb-0">AI Financial Coach</h6>
+                            <small class="text-success">● Online</small>
+                        </div>
+                    </div>
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-three-dots-vertical"></i>
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#" onclick="clearChat()">Clear Chat</a></li>
+                            <li><a class="dropdown-item" href="/ai/insights">View Insights</a></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card-body chat-messages" id="chat-messages">
+                    <div class="message ai-message">
+                        <div class="message-content">
+                            <p class="mb-0">Hello! I'm your AI Financial Coach. I can help you with:</p>
+                            <ul class="mb-0 mt-2">
+                                <li>Analyzing your spending patterns</li>
+                                <li>Creating budget recommendations</li>
+                                <li>Goal planning and tracking</li>
+                                <li>Debt optimization strategies</li>
+                                <li>Answering "what-if" scenarios</li>
+                            </ul>
+                            <p class="mb-0 mt-2">What would you like to know about your finances today?</p>
+                        </div>
+                        <small class="message-time">Just now</small>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <form id="chat-form" class="d-flex gap-2">
+                        <input type="text" class="form-control" id="chat-input" placeholder="Ask me anything about your finances..." autocomplete="off">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-send"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.getElementById('chat-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const input = document.getElementById('chat-input');
+    const message = input.value.trim();
+    if (!message) return;
+    
+    // Add user message
+    addMessage('user', message);
+    input.value = '';
+    
+    // Show typing indicator
+    showTypingIndicator();
+    
+    // Send to API
+    try {
+        const response = await fetch('/ai/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: message })
+        });
+        const data = await response.json();
+        hideTypingIndicator();
+        addMessage('ai', data.answer || data.message || 'I apologize, but I am unable to process your request at this time.');
+    } catch (error) {
+        hideTypingIndicator();
+        addMessage('ai', 'Sorry, I encountered an error. Please try again.');
+    }
+});
+
+function addMessage(role, content) {
+    const container = document.getElementById('chat-messages');
+    const div = document.createElement('div');
+    div.className = `message ${role}-message`;
+    div.innerHTML = `
+        <div class="message-content">${content}</div>
+        <small class="message-time">${new Date().toLocaleTimeString()}</small>
+    `;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+function showTypingIndicator() {
+    const container = document.getElementById('chat-messages');
+    const div = document.createElement('div');
+    div.id = 'typing-indicator';
+    div.className = 'message ai-message';
+    div.innerHTML = `
+        <div class="message-content">
+            <span class="typing-dots"><span>.</span><span>.</span><span>.</span></span>
+        </div>
+    `;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+function hideTypingIndicator() {
+    const indicator = document.getElementById('typing-indicator');
+    if (indicator) indicator.remove();
+}
+
+function clearChat() {
+    const container = document.getElementById('chat-messages');
+    container.innerHTML = `
+        <div class="message ai-message">
+            <div class="message-content">
+                <p class="mb-0">Chat cleared. How can I help you today?</p>
+            </div>
+        </div>
+    `;
+}
+</script>
+{% endblock %}
