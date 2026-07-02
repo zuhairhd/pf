@@ -46,11 +46,11 @@
 | SAAS-201 | Tenant Isolation Middleware | **Done** | `TenantScopingMiddleware` extracts tenant_id from JWT and sets DB RLS context | Application-level + DB-level RLS both active | Monitor for performance impact |
 | SAAS-202 | Subscription Plans (Free, Premium, Family) | **Partial** | `SubscriptionPlan` enum with 4 plans | No plan feature flags, no limit enforcement logic | Add feature checking service |
 | SAAS-203 | Usage Limits and Quotas | **Partial** | `max_users`, `max_transactions`, `max_ai_requests_per_day` on Organization | No usage tracking or enforcement | Create `UsageLog` model and enforcement |
-| AUTH-300 | User Registration | **Partial** | Register endpoint, AuthService.create_user() | Email sending is placeholder (`pass`) | Implement email or console backend |
-| AUTH-301 | User Login and JWT | **Partial** | Login endpoint, access/refresh tokens, JWT encoding | Token expiry: 7 days (not 15 min + 7 days per PLAN_V2.md) | Adjust token expiry |
-| AUTH-302 | Forgot Password | **Partial** | Endpoint exists, AuthService.reset_password() | Email sending is placeholder | Implement email delivery |
-| AUTH-303 | Email Verification | **Partial** | Endpoint exists, AuthService.verify_email() | Email sending is placeholder | Implement email delivery |
-| AUTH-304 | Role-Based Access Control (RBAC) | **Partial** | `UserRole` enum (owner/admin/editor/viewer) | No route guards, no resource-level checks, no permission decorators | Add permission decorators and guards |
+| AUTH-300 | User Registration | **Done** | Register endpoint normalizes email, hashes password, creates organization, seeds notification settings, sends dev-mode verification | — | — |
+| AUTH-301 | User Login and JWT | **Done** | 15-min access + 7-day refresh tokens, rotation on refresh, logout revocation | — | — |
+| AUTH-302 | Forgot Password | **Done** | Forgot-password + reset-password endpoints, 1-hour token expiry, used-token invalidation, dev-mode link logging | — | — |
+| AUTH-303 | Email Verification | **Done** | Verification token creation, verify endpoint, 24-hour expiry, dev-mode link logging | — | — |
+| AUTH-304 | Role-Based Access Control (RBAC) | **Done** | `app.core.security` guards: active/verified/tenant-member/tenant-admin/tenant-owner/super-admin; admin routes protected | Resource-level object permissions not yet implemented | Add object-level permission checks in service layer |
 | AUTH-305 | Tenant Member Invitation | **Partial** | `FamilyMember` has invitation fields | No invitation endpoint, no email sending | Build invitation flow |
 | USR-400 | User Profile and Settings | **Partial** | User model has profile fields | No separate UserProfile model, no avatar upload endpoint | Acceptable for now; add upload later |
 | USR-401 | Currency and Language Preferences | **Done** | `currency` (OMR default), `language`, `timezone` on User | OMR uses 3 decimals — verify formatting | Verify OMR formatting throughout |
@@ -65,8 +65,8 @@
 
 | Status | Count | Cards |
 |--------|-------|-------|
-| **Done** | 12 | PF-000, PF-001, PF-003, PF-011, PF-012, PF-014, PF-101, PF-103, PF-103C, PF-103B, SAAS-200-SEED, SAAS-201, USR-401 |
-| **Partial** | 18 | PF-004, PF-005, PF-006, PF-007, PF-010, PF-015, PF-100, PF-102, SAAS-200, SAAS-202, SAAS-203, AUTH-300, AUTH-301, AUTH-302, AUTH-303, AUTH-304, AUTH-305, USR-400, USR-402, ACC-500, ACC-501, ACC-502 |
+| **Done** | 18 | PF-000, PF-001, PF-003, PF-011, PF-012, PF-014, PF-101, PF-103, PF-103C, PF-103B, SAAS-200-SEED, SAAS-201, USR-401, AUTH-300, AUTH-301, AUTH-302, AUTH-303, AUTH-304 |
+| **Partial** | 17 | PF-004, PF-005, PF-006, PF-007, PF-010, PF-015, PF-100, PF-102, SAAS-200, SAAS-202, SAAS-203, AUTH-305, USR-400, USR-402, ACC-500, ACC-501, ACC-502 |
 | **Missing** | 1 | PF-008 |
 | **Should Refactor** | 2 | PF-002, PF-013 |
 | **Unknown** | 1 | PF-009 |
@@ -111,7 +111,8 @@
 ### High Priority (Needed for MVP)
 4. ~~**PF-103B** — Safe Super Admin RLS Bypass Design (for support operations)~~ **DONE**
 5. **PF-008 / IMP-700-703** — Import system (CSV/Excel/SMS) — critical for Oman market
-6. **AUTH-300 to AUTH-305** — Complete auth flow (email sending, RBAC guards)
+6. ~~**AUTH-300 to AUTH-304** — Complete auth flow (login, register, JWT, email verification, password reset, RBAC guards)~~ **DONE**  
+   **AUTH-305** — Tenant member invitation (remaining)
 7. **AI-1201** — LLM client integration (OpenAI) — core differentiator
 8. **PF-002 / PF-013** — Structural alignment (gradual refactor)
 

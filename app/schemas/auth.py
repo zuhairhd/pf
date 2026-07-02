@@ -37,3 +37,16 @@ class UserPreferenceUpdate(BaseModel):
     daily_brief_time: Optional[str] = None  # HH:MM
     quiet_hours_start: Optional[str] = None
     quiet_hours_end: Optional[str] = None
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str = Field(..., min_length=8)

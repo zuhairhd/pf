@@ -21,7 +21,12 @@ class Settings(BaseSettings):
     # JWT
     JWT_SECRET: str = "change-me-in-production"
     JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRATION_MINUTES: int = 60 * 24 * 7  # 7 days
+    JWT_EXPIRATION_MINUTES: int = 60 * 24 * 7  # Deprecated: kept for compatibility
+    JWT_ACCESS_EXPIRATION_MINUTES: int = 15  # Access token lifetime
+    JWT_REFRESH_EXPIRATION_DAYS: int = 7  # Refresh token lifetime
+    
+    # Email
+    EMAIL_DEV_MODE: bool = True  # When True, email links are logged instead of sent
     
     # AI / OpenAI
     OPENAI_API_KEY: str = ""

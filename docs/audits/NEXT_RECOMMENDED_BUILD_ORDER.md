@@ -10,9 +10,9 @@
 
 ## Executive Summary
 
-Cards PF-014-DB (Database Initialization), PF-103A (RLS Implementation), PF-103C (Child Table RLS Coverage), and PF-103B (Safe Super Admin Access) are **COMPLETE**. The database now has 40 tables with Alembic-managed migrations, and 30 tenant-scoped tables are protected by PostgreSQL Row-Level Security with FORCE RLS.
+Cards PF-014-DB (Database Initialization), PF-103A (RLS Implementation), PF-103C (Child Table RLS Coverage), PF-103B (Safe Super Admin Access), SAAS-200-SEED (Seed Default Data), and AUTH-300-FIX (Complete Authentication Flow) are **COMPLETE**. The database now has 40 tables with Alembic-managed migrations, 30 tenant-scoped tables are protected by PostgreSQL Row-Level Security with FORCE RLS, and the auth gateway is functional with RBAC guards.
 
-The next 10 cards must focus on **making the application usable**: seed data, completing auth, building tests, and adding the import system that is critical for the Oman market.
+The next cards must focus on **making the application usable**: formalizing the test infrastructure and adding the import system that is critical for the Oman market.
 
 ---
 
@@ -100,29 +100,32 @@ The next 10 cards must focus on **making the application usable**: seed data, co
 
 ---
 
-### Card 5: AUTH-300-FIX — Complete Authentication Flow (Email, RBAC Guards)
+### Card 5: AUTH-300-FIX — Complete Authentication Flow (Email, RBAC Guards) ✅ DONE
 **PLAN_V2 Reference:** AUTH-300 to AUTH-305  
 **Type:** Feature Completion  
 **Priority:** HIGH
 
-**What to do:**
-- Implement email sending (SMTP or console backend for dev)
-- Add email verification email template
-- Add password reset email template
-- Add role-based route guards (`require_role` decorator)
-- Add resource-level permission checks (can this user edit this transaction?)
-- Fix token expiry (15 min access, 7 day refresh per PLAN_V2.md)
-- Add logout endpoint that revokes refresh token
+**Completed:**
+- Implemented dev-mode email verification and password reset (links logged, no SMTP required).
+- Added `app.core.security` with reusable RBAC and tenant-context dependencies.
+- Fixed JWT token expiry to 15-minute access + 7-day refresh; added refresh-token rotation and logout revocation.
+- Added unique `jti` claim to refresh tokens to prevent storage collisions.
+- Updated `/auth/register`, `/auth/login`, `/auth/verify-email/{token}`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/refresh`, `/auth/logout`.
+- Admin routes now require `require_super_admin`.
+- 15 auth integration tests pass; full suite 45/45 passes.
 
-**Why fifth:** Auth is the gateway to everything. Incomplete auth blocks user onboarding and creates security holes.
+**Remaining:**
+- Resource-level object permissions (e.g., can this user edit this specific transaction?).
+- SMTP production email backend and HTML templates.
+- Tenant member invitation flow (`AUTH-305`).
 
 **Acceptance criteria:**
-- [ ] Registration sends verification email
-- [ ] Login returns proper 15-min access + 7-day refresh tokens
-- [ ] Role decorators protect admin routes
-- [ ] Users can only access their own data
-- [ ] Logout revokes refresh token
-- [ ] Password reset flow works end-to-end
+- [x] Registration sends/logs verification email
+- [x] Login returns proper 15-min access + 7-day refresh tokens
+- [x] Role dependencies protect admin routes
+- [x] Users can only access their own tenant data (RLS + JWT tenant_id)
+- [x] Logout revokes refresh token
+- [x] Password reset flow works end-to-end
 
 **Estimated effort:** 4-6 hours
 
@@ -298,8 +301,8 @@ Card 2: RLS               → DONE ✅
 Card 2a: Child Table RLS  → DONE ✅
 Card 3: Admin Access      → DONE ✅
 Card 4: Seed Data         → DONE ✅
-Card 5: Auth Completion   → Gateway. Users can't onboard without it.
-Card 5: Auth Completion   → Gateway. Users can't onboard without it.
+Card 5: Auth Completion   → DONE ✅
+Card 6: Tests             → Confidence. Protects against regressions.
 Card 6: Tests             → Confidence. Protects against regressions.
 Card 7: CSV Import        → Data Entry. Primary user workflow.
 Card 8: SMS Import        → Differentiator. Oman market critical.
@@ -316,7 +319,7 @@ Card 1 (Database) ✅
     │       │                                                              │
     │       │                                                              └──→ Card 4 (Seed Data) ✅
     │       │                                                                     │
-    │       │                                                                     └──→ Card 5 (Auth) ──→ Card 6 (Tests)
+    │       │                                                                     └──→ Card 5 (Auth) ✅ ──→ Card 6 (Tests)
     │       │
     │       └──→ Card 7 (CSV Import) ──→ Card 8 (SMS Import)
     │               │
@@ -344,13 +347,13 @@ Card 1 (Database) ✅
 
 ## Exact Recommended Next Card
 
-### Card 5: AUTH-300-FIX — Complete Authentication Flow (Email, RBAC Guards)
+### Card 6: PF-100-TEST — Formalize Test Infrastructure (Auth + Tenant Isolation)
 
-**Decision:** SAAS-200-SEED is complete. The database, RLS, admin access, and default data are now in place. The next priority is completing authentication so the seeded development tenant and super-admin can actually log in and use the application.
+**Decision:** AUTH-300-FIX is complete and the auth routes already have integration tests, but the project still lacks a dedicated test database, a shared `conftest.py`, and reusable async fixtures. Formalizing the test pyramid now protects the RLS and auth work already completed before adding CSV/SMS import or LLM integration.
 
-**What to tell the coding agent for AUTH-300-FIX:**
+**What to tell the coding agent for PF-100-TEST:**
 
-> "Implement Card AUTH-300-FIX: Complete Authentication Flow. Implement email sending (SMTP or console backend for dev), add email verification and password reset templates, add `require_role` decorators and resource-level permission checks, fix JWT token expiry to 15-minute access + 7-day refresh, and add a logout endpoint that revokes refresh tokens. Do not weaken RLS. Run `python -m pytest -q` after changes."
+> "Implement Card PF-100-TEST: Formalize Test Infrastructure. Create a separate async test database configuration, add a root `conftest.py` with reusable fixtures for `db`, `client`, `test_user`, `test_tenant`, and `super_admin_user`, and migrate shared helpers from `app/tests/integration/test_auth.py` into the fixture layer. Add tests that prove tenant isolation across RLS-protected tables and that admin support access still obeys RLS. Do not weaken RLS or bypass tenant context. Run `python -m pytest -q` after changes."
 
 ---
 
