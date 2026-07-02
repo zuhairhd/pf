@@ -42,6 +42,7 @@
 | PF-103C | RLS Coverage Audit for Child Tables | **Done** | 6 child/tenant tables now protected (30 total RLS tables, 120 policies), `app/tests/integration/test_rls_child_tables.py` passes | Super admin bypass still deferred | Implement PF-103B |
 | PF-103B | Safe Super Admin Tenant Access | **Done** | `admin_access_sessions` table, `app/core/admin_context.py`, `/admin/support-access/*` endpoints, 9 tests pass | Expiry job not scheduled; break-glass not implemented | Schedule stale-session cleanup; implement PF-103D if break-glass needed |
 | SAAS-200-SEED | Seed Default Platform Data | **Done** | `scripts/seed_default_data.py`, `app/seeds/default_data.py`, dev tenant + COA + budget + 9 tests pass | No dedicated `plans` table; no general transaction categories table | Implement SAAS-202 plan table; implement TRX-604A categories |
+| PF-100-TEST | Formalize Test Infrastructure | **Done** | `pytest.ini`, `app/tests/conftest.py`, `app/tests/helpers.py`, smoke suite, 46/46 tests pass | CI pipeline not built; `TEST_DATABASE_URL` not configured by default | Add CI workflow when secrets/environment are ready |
 | SAAS-200 | Tenant Model and CRUD | **Partial** | `Organization` model with CRUD fields | Named "Organization" not "Tenant"; no `Plan` model separate from enum | Rename or alias; extract Plan model |
 | SAAS-201 | Tenant Isolation Middleware | **Done** | `TenantScopingMiddleware` extracts tenant_id from JWT and sets DB RLS context | Application-level + DB-level RLS both active | Monitor for performance impact |
 | SAAS-202 | Subscription Plans (Free, Premium, Family) | **Partial** | `SubscriptionPlan` enum with 4 plans | No plan feature flags, no limit enforcement logic | Add feature checking service |
@@ -65,7 +66,7 @@
 
 | Status | Count | Cards |
 |--------|-------|-------|
-| **Done** | 18 | PF-000, PF-001, PF-003, PF-011, PF-012, PF-014, PF-101, PF-103, PF-103C, PF-103B, SAAS-200-SEED, SAAS-201, USR-401, AUTH-300, AUTH-301, AUTH-302, AUTH-303, AUTH-304 |
+| **Done** | 19 | PF-000, PF-001, PF-003, PF-011, PF-012, PF-014, PF-101, PF-103, PF-103C, PF-103B, SAAS-200-SEED, PF-100-TEST, SAAS-201, USR-401, AUTH-300, AUTH-301, AUTH-302, AUTH-303, AUTH-304 |
 | **Partial** | 17 | PF-004, PF-005, PF-006, PF-007, PF-010, PF-015, PF-100, PF-102, SAAS-200, SAAS-202, SAAS-203, AUTH-305, USR-400, USR-402, ACC-500, ACC-501, ACC-502 |
 | **Missing** | 1 | PF-008 |
 | **Should Refactor** | 2 | PF-002, PF-013 |
@@ -120,7 +121,7 @@
 8. **BILL-800 / SUB-900** — Bills and subscriptions (models exist, need routers)
 9. **DB-1101 to DB-1105** — Dashboard widgets
 10. **NOTIF-1600** — Email notifications (SMTP integration)
-11. **Tests** — No test coverage
+11. ~~**Tests** — Formalized test infrastructure (conftest, helpers, smoke suite)~~ **DONE**
 
 ### Lower Priority (Can Defer)
 12. **BILLING-1800** — Stripe billing

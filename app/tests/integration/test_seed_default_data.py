@@ -5,36 +5,16 @@ These tests verify that:
 - the seed script is idempotent
 - tenant-scoped seeded data respects RLS
 - no real personal data is seeded
+
+Shared fixtures come from ``app/tests/conftest.py``.
 """
 
 from __future__ import annotations
 
 import os
-from datetime import date
 
 import pytest
-from dotenv import load_dotenv
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy import select, func
-
-load_dotenv(dotenv_path=".env")
-
-DATABASE_URL = os.getenv("DATABASE_URL", "")
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL environment variable is not set")
-
-ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
-
-
-@pytest.fixture
-async def db():
-    """Provide an async database session and roll back after each test."""
-    engine = create_async_engine(ASYNC_DATABASE_URL, future=True, pool_pre_ping=True)
-    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    async with session_factory() as session:
-        async with session.begin():
-            yield session
-    await engine.dispose()
 
 
 @pytest.mark.anyio
@@ -54,19 +34,15 @@ async def test_seed_script_runs_successfully(db):
 
 
 @pytest.mark.anyio
-async def test_seed_is_idempotent(db):
+async def test_seed_is_idempotent(db, tenant_context):
     """Running the seed twice does not create duplicate tenant-scoped rows."""
     from app.seeds import seed_all_default_data
     from app.models import Account, Budget, BudgetCategory
 
-    # First run.
     summary1 = await seed_all_default_data(db, print_temp_password=False)
     org_id = summary1["organization"]["id"]
 
-    # Count rows after first run within tenant context.
-    from app.core.rls import set_tenant_context_async
-
-    await set_tenant_context_async(db, org_id)
+    await tenant_context(org_id)
     accounts_count_1 = (
         await db.execute(select(func.count(Account.id)).where(Account.tenant_id == org_id))
     ).scalar()
@@ -79,11 +55,9 @@ async def test_seed_is_idempotent(db):
         )
     ).scalar()
 
-    # Second run.
     summary2 = await seed_all_default_data(db, print_temp_password=False)
 
-    # Count rows after second run.
-    await set_tenant_context_async(db, org_id)
+    await tenant_context(org_id)
     accounts_count_2 = (
         await db.execute(select(func.count(Account.id)).where(Account.tenant_id == org_id))
     ).scalar()
@@ -138,15 +112,14 @@ async def test_development_user_is_super_admin(db):
 
 
 @pytest.mark.anyio
-async def test_chart_of_accounts_belongs_to_dev_tenant(db):
+async def test_chart_of_accounts_belongs_to_dev_tenant(db, tenant_context):
     """Seeded accounts belong only to the development tenant."""
     from app.models import Account, Organization
-    from app.core.rls import set_tenant_context_async
 
     org_result = await db.execute(select(Organization).where(Organization.slug == "dev-family"))
     org = org_result.scalar_one()
 
-    await set_tenant_context_async(db, org.id)
+    await tenant_context(org.id)
     result = await db.execute(
         select(Account).where(Account.tenant_id == org.id).order_by(Account.code)
     )
@@ -156,7 +129,6 @@ async def test_chart_of_accounts_belongs_to_dev_tenant(db):
     account_types = {acc.account_type for acc in accounts}
     assert account_types == {"Asset", "Liability", "Equity", "Income", "Expense"}
 
-    # Verify some OMR-friendly accounts exist.
     names = {acc.name for acc in accounts}
     assert "Bank Muscat" in names
     assert "Cash" in names
@@ -173,7 +145,6 @@ async def test_tenant_scoped_rows_invisible_without_context(db):
     org_result = await db.execute(select(Organization).where(Organization.slug == "dev-family"))
     org = org_result.scalar_one()
 
-    # Ensure no tenant context.
     await clear_tenant_context_async(db)
     result = await db.execute(select(Account).where(Account.tenant_id == org.id))
     accounts = result.scalars().all()
@@ -182,15 +153,14 @@ async def test_tenant_scoped_rows_invisible_without_context(db):
 
 
 @pytest.mark.anyio
-async def test_budget_categories_linked_to_expense_accounts(db):
+async def test_budget_categories_linked_to_expense_accounts(db, tenant_context):
     """Default budget categories are linked to matching expense accounts."""
     from app.models import Budget, BudgetCategory, Organization, Account
-    from app.core.rls import set_tenant_context_async
 
     org_result = await db.execute(select(Organization).where(Organization.slug == "dev-family"))
     org = org_result.scalar_one()
 
-    await set_tenant_context_async(db, org.id)
+    await tenant_context(org.id)
     budget_result = await db.execute(
         select(Budget).where(Budget.tenant_id == org.id, Budget.name == "Monthly Household Budget")
     )
