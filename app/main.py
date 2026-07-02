@@ -9,6 +9,7 @@ from app.middleware.tenant_scoping import TenantScopingMiddleware
 from app.middleware.logging import LoggingMiddleware
 from app.middleware.error_handling import setup_error_handlers
 from app.routers import auth, dashboard, accounts, transactions, budgets, goals, loans, ai as ai_router, notifications, documents, profile, admin
+from app.imports.routes import router as imports_router
 
 settings = get_settings()
 
@@ -55,6 +56,7 @@ app.include_router(notifications.router, prefix="/notifications", tags=["Notific
 app.include_router(documents.router, prefix="/documents", tags=["Documents"])
 app.include_router(profile.router, prefix="/profile", tags=["Profile"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
+app.include_router(imports_router, prefix="/imports", tags=["Imports"])
 
 
 @app.get("/")
