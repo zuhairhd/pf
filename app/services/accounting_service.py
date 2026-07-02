@@ -128,7 +128,11 @@ class AccountingService:
         return await self.create_journal_entry(entry_data)
     
     async def _generate_reference(self, entry_date: date) -> str:
-        """Generate a unique reference number for a journal entry."""
+        """Generate a unique reference number for a journal entry.
+
+        The reference includes the tenant id so that the globally-unique
+        ``reference`` constraint cannot collide across tenants.
+        """
         year = entry_date.year
         result = await self.db.execute(
             select(func.count(JournalEntry.id))
@@ -136,7 +140,7 @@ class AccountingService:
             .where(func.extract('year', JournalEntry.date) == year)
         )
         count = result.scalar() + 1
-        return f"JE-{year}-{count:04d}"
+        return f"JE-{self.tenant_id}-{year}-{count:04d}"
     
     async def get_trial_balance(self, from_date: Optional[date] = None, to_date: Optional[date] = None) -> List[Dict]:
         """Generate trial balance report."""

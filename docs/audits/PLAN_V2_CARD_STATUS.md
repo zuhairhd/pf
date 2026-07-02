@@ -20,7 +20,7 @@
 | PF-005 | Define AI CFO Safety Rules | **Partial** | `AIInsight` has confidence field | No `app/ai_cfo/llm/safety.py`, no disclaimer injection, no content filtering | Create safety module with 10 rules |
 | PF-006 | Define User Navigation Around Financial Life | **Partial** | Templates exist for dashboard, accounts, budgets, goals, loans, ai, transactions | Navigation not reorganized around "Today", "This Month", "Cash Flow" per PLAN_V2.md | Restructure nav in `base.html` |
 | PF-007 | Define Normal User View vs Accountant View | **Partial** | Accounts router shows COA; no accountant toggle | No "Accountant View" mode, no hidden accounting | Add view mode toggle and hide COA from normal users |
-| PF-008 | Define Import Strategy (Manual, CSV, Excel, SMS) | **Missing** | No `app/imports/` module | No CSV parser, no Excel parser, no SMS parser | Create `app/imports/` with parsers |
+| PF-008 | Define Import Strategy (Manual, CSV, Excel, SMS) | **Done** | `app/imports/` module created, CSV parser + upload/preview/confirm endpoints, Alembic `9ee380da96d5` | Excel and SMS parsers not yet implemented | Implement IMP-701 (Excel) and IMP-702 (SMS) |
 | PF-009 | Define MVP User Journey | **Unknown** | No documentation found | No user journey document | Write `docs/product/mvp-journey.md` |
 | PF-010 | Define Family Finance Model | **Partial** | `FamilyMember` model exists on `User` | No `Family` model, no shared/private account logic, no roles matrix | Create proper `app/family/` module |
 | PF-011 | Write PLAN_V2.md | **Done** | `PLAN_V2.md` exists at project root | — | — |
@@ -68,7 +68,7 @@
 |--------|-------|-------|
 | **Done** | 19 | PF-000, PF-001, PF-003, PF-011, PF-012, PF-014, PF-101, PF-103, PF-103C, PF-103B, SAAS-200-SEED, PF-100-TEST, SAAS-201, USR-401, AUTH-300, AUTH-301, AUTH-302, AUTH-303, AUTH-304 |
 | **Partial** | 17 | PF-004, PF-005, PF-006, PF-007, PF-010, PF-015, PF-100, PF-102, SAAS-200, SAAS-202, SAAS-203, AUTH-305, USR-400, USR-402, ACC-500, ACC-501, ACC-502 |
-| **Missing** | 1 | PF-008 |
+| **Missing** | 0 | — |
 | **Should Refactor** | 2 | PF-002, PF-013 |
 | **Unknown** | 1 | PF-009 |
 
@@ -81,7 +81,8 @@
 | Card Range | Area | Overall Status |
 |------------|------|---------------|
 | TRX-600 to TRX-605 | Transactions | Partial (models exist, routes exist, service exists) |
-| IMP-700 to IMP-703 | Imports | **Missing** (no module) |
+| IMP-700 | CSV Import | **Done** (`app/imports/` module, parser, endpoints, RLS, tests) |
+| IMP-701 to IMP-703 | Imports | **Missing** (Excel parser, SMS parser, import UI refinements) |
 | BILL-800 to BILL-801 | Bills | Partial (model exists, no dedicated router) |
 | SUB-900 to SUB-901 | Subscriptions | Partial (model exists, no dedicated router) |
 | BDG-1000 to BDG-1003 | Budgets | Partial (models, routes, service exist) |

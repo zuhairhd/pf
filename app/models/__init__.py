@@ -17,3 +17,4 @@ from app.models.ai import AIInsight, AIReport, AIChatSession, AIChatMessage, AII
 from app.models.audit import AuditLog, SystemEvent
 from app.models.admin_access import AdminAccessSession, AdminAccessStatus
 from app.models.analytics import UserActivity, FeatureUsage, AITokenUsage
+from app.imports.models import ImportJob, ImportedRow

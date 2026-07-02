@@ -9,6 +9,7 @@ asyncpg
 python-dotenv
 python-jose[cryptography]
 passlib[bcrypt]
+bcrypt<5.0
 pyotp
 python-multipart
 email-validator

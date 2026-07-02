@@ -10,13 +10,28 @@ to the current transaction and does not leak across connection pool reuse.
 """
 
 from typing import Optional
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 
 # The PostgreSQL GUC (Grand Unified Configuration) variable name
 TENANT_GUC = "app.current_tenant_id"
+
+
+@event.listens_for(Session, "after_begin")
+def _set_tenant_context_on_transaction_begin(session, transaction, connection):
+    """Re-apply the tenant context at the start of every transaction.
+
+    ``SET LOCAL`` is scoped to a single transaction, so any code that commits
+    and then continues to use the same session needs the context set again.
+    Sessions that have no bound tenant_id get an empty context (no rows).
+    """
+    tenant_id = session.info.get("tenant_id")
+    if tenant_id is not None:
+        connection.execute(text(f"SET LOCAL {TENANT_GUC} = '{tenant_id}'"))
+    else:
+        connection.execute(text(f"SET LOCAL {TENANT_GUC} = ''"))
 
 
 def _validate_tenant_id(tenant_id: Optional[int]) -> None:
@@ -43,6 +58,7 @@ async def set_tenant_context_async(
         tenant_id: The tenant ID to set, or None to clear.
     """
     _validate_tenant_id(tenant_id)
+    session.info["tenant_id"] = tenant_id
     if tenant_id is not None:
         # asyncpg does not accept bound parameters in a SET statement, so the
         # validated integer is inlined safely as a quoted string literal.
@@ -64,6 +80,7 @@ def set_tenant_context_sync(
         tenant_id: The tenant ID to set, or None to clear.
     """
     _validate_tenant_id(tenant_id)
+    session.info["tenant_id"] = tenant_id
     if tenant_id is not None:
         session.execute(
             text(f"SET LOCAL {TENANT_GUC} = :tenant_id"),
@@ -75,11 +92,13 @@ def set_tenant_context_sync(
 
 async def clear_tenant_context_async(session: AsyncSession) -> None:
     """Clear the tenant context on an async session."""
+    session.info.pop("tenant_id", None)
     await session.execute(text(f"SET LOCAL {TENANT_GUC} = ''"))
 
 
 def clear_tenant_context_sync(session: Session) -> None:
     """Clear the tenant context on a sync session."""
+    session.info.pop("tenant_id", None)
     session.execute(text(f"SET LOCAL {TENANT_GUC} = ''"))
 
 

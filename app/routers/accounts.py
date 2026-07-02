@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.models.database import get_db
+from app.core.security import get_db_with_tenant_context
 from app.models import Account, JournalEntry, JournalLine
 from app.schemas.accounting import AccountCreate, AccountUpdate, JournalEntryCreate
 from app.services.accounting_service import AccountingService
@@ -32,12 +33,16 @@ async def accounts_list(request: Request, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/")
-async def create_account(account: AccountCreate, db: AsyncSession = Depends(get_db)):
+async def create_account(
+    account: AccountCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+):
     """Create a new account."""
     tenant_id = getattr(request.state, "tenant_id", None)
     if not tenant_id:
         raise HTTPException(status_code=403, detail="Not authenticated")
-    
+
     service = AccountingService(db, tenant_id)
     new_account = await service.create_account(account)
     return new_account

@@ -244,6 +244,22 @@ async def seed_development_organization(db: AsyncSession) -> Organization:
     return org
 
 
+def _prepare_password_for_hash(password: str) -> str:
+    """Ensure a password fits bcrypt's 72-byte limit.
+
+    bcrypt silently truncates passwords longer than 72 bytes. To avoid the
+    modern bcrypt error, we truncate explicitly and warn when this happens.
+    """
+    encoded = password.encode("utf-8")
+    if len(encoded) > 72:
+        print(
+            "WARNING: DEV_SUPERUSER_PASSWORD exceeds bcrypt's 72-byte limit; "
+            "truncating before hashing."
+        )
+        return encoded[:72].decode("utf-8", errors="ignore")
+    return password
+
+
 async def seed_development_superuser(db: AsyncSession, org: Organization) -> tuple[User, str | None]:
     """Create or update the development super-admin user.
 
@@ -264,7 +280,7 @@ async def seed_development_superuser(db: AsyncSession, org: Organization) -> tup
         temp_password = _generate_temp_password()
         password_to_hash = temp_password
     else:
-        password_to_hash = password
+        password_to_hash = _prepare_password_for_hash(password)
 
     user, created = await _get_or_create(
         db,
@@ -293,7 +309,7 @@ async def seed_development_superuser(db: AsyncSession, org: Organization) -> tup
         user.role = UserRole.OWNER
         # Only update the password if an explicit env password was provided.
         if password:
-            user.hashed_password = auth_service.hash_password(password)
+            user.hashed_password = auth_service.hash_password(_prepare_password_for_hash(password))
         await db.flush()
         await db.refresh(user)
         # Do not return a temp password for an existing user.
