@@ -44,10 +44,9 @@ async def set_tenant_context_async(
     """
     _validate_tenant_id(tenant_id)
     if tenant_id is not None:
-        await session.execute(
-            text(f"SET LOCAL {TENANT_GUC} = :tenant_id"),
-            {"tenant_id": str(tenant_id)},
-        )
+        # asyncpg does not accept bound parameters in a SET statement, so the
+        # validated integer is inlined safely as a quoted string literal.
+        await session.execute(text(f"SET LOCAL {TENANT_GUC} = '{tenant_id}'"))
     else:
         await session.execute(text(f"SET LOCAL {TENANT_GUC} = ''"))
 

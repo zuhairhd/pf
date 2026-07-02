@@ -10,7 +10,7 @@
 
 ## Executive Summary
 
-Cards PF-014-DB (Database Initialization) and PF-103A (RLS Implementation) are **COMPLETE**. The database now has 39 tables with Alembic-managed migrations, and all 24 tenant-scoped tables are protected by PostgreSQL Row-Level Security with FORCE RLS.
+Cards PF-014-DB (Database Initialization), PF-103A (RLS Implementation), PF-103C (Child Table RLS Coverage), and PF-103B (Safe Super Admin Access) are **COMPLETE**. The database now has 40 tables with Alembic-managed migrations, and 30 tenant-scoped tables are protected by PostgreSQL Row-Level Security with FORCE RLS.
 
 The next 10 cards must focus on **making the application usable**: seed data, completing auth, building tests, and adding the import system that is critical for the Oman market.
 
@@ -32,32 +32,40 @@ The next 10 cards must focus on **making the application usable**: seed data, co
 **Tests:** 6/6 passed  
 **Status:** RLS active, tenant context set via SET LOCAL, cross-tenant access blocked.
 
+### Card 3: PF-103C — RLS Coverage Audit for Child Tables ✅ DONE
+**Date:** 2026-07-02  
+**Alembic Revision:** df41f5ea2f46  
+**Tables Protected:** 6 additional child/tenant tables (30 total with RLS+FORCE)  
+**Policies Created:** 24 additional policies (120 total)  
+**Tests:** 6/6 passed  
+**Status:** Child tables now protected via join-based or organization_id-based RLS.
+
+### Card 4: PF-103B — Safe Super Admin Tenant Access ✅ DONE
+**Date:** 2026-07-02  
+**Alembic Revision:** 542823443f9e  
+**Admin Access Model:** One-tenant-at-a-time support sessions with audit logging  
+**Tests:** 9/9 passed  
+**Status:** No true RLS bypass implemented; admin access still obeys normal RLS policies.
+
 ---
 
 ## The Next 10 Cards
 
-### Card 3: PF-103B — Safe Super Admin RLS Bypass Design
+### Card 3: PF-103B — Safe Super Admin Tenant Access ✅ DONE
 **PLAN_V2 Reference:** PF-103 (PostgreSQL RLS Implementation)  
 **Type:** Security / Infrastructure  
 **Priority:** HIGH
 
-**What to do:**
-- Design a safe mechanism for super admin/support staff to view tenant data for debugging
-- Options: separate admin DB role, explicit admin connection pool, or audit-logged bypass
-- Do NOT use a simple GUC flag that could be exploited via SQL injection
-- Document the bypass mechanism and security implications
-- Add admin-only endpoints for tenant data inspection (with full audit logging)
+**Completed:**
+- Implemented one-tenant-at-a-time support sessions via `AdminAccessSession`.
+- Added `/admin/support-access/*` endpoints with super-admin authorization.
+- Audit records include admin, target tenant, reason, timing, IP, and user agent.
+- No true RLS bypass; normal app user still obeys RLS.
+- 9 integration tests pass.
 
-**Why third:** Support staff need to debug tenant issues. A safe bypass is needed, but it must not create a security hole.
-
-**Acceptance criteria:**
-- [ ] Admin bypass is available only through a dedicated, auditable path
-- [ ] All admin queries are logged to audit_logs table
-- [ ] Normal app user cannot bypass RLS
-- [ ] Bypass requires explicit admin authentication
-- [ ] Documented in security runbook
-
-**Estimated effort:** 2-3 hours
+**Remaining:**
+- Schedule a background job to mark expired sessions as `expired`.
+- If a true break-glass DBA bypass is ever required, implement `PF-103D` separately.
 
 ---
 
@@ -282,7 +290,8 @@ The next 10 cards must focus on **making the application usable**: seed data, co
 ```
 Card 1: Database          → DONE ✅
 Card 2: RLS               → DONE ✅
-Card 3: Admin Bypass      → Security. Support needs to debug tenant issues.
+Card 2a: Child Table RLS  → DONE ✅
+Card 3: Admin Access      → DONE ✅
 Card 4: Seed Data         → Usability. App needs defaults to function.
 Card 5: Auth Completion   → Gateway. Users can't onboard without it.
 Card 6: Tests             → Confidence. Protects against regressions.
@@ -297,11 +306,11 @@ Card 10: Bills/Subs       → Features. Completes Financial Life MVP.
 ```
 Card 1 (Database) ✅
     │
-    ├──→ Card 2 (RLS) ✅ ──→ Card 3 (Admin Bypass)
-    │       │                  │
-    │       │                  └──→ Card 4 (Seed Data)
-    │       │                         │
-    │       │                         └──→ Card 5 (Auth) ──→ Card 6 (Tests)
+    ├──→ Card 2 (RLS) ✅ ──→ Card 2a (Child Table RLS) ✅ ──→ Card 3 (Admin Access) ✅
+    │       │                                                              │
+    │       │                                                              └──→ Card 4 (Seed Data)
+    │       │                                                                     │
+    │       │                                                                     └──→ Card 5 (Auth) ──→ Card 6 (Tests)
     │       │
     │       └──→ Card 7 (CSV Import) ──→ Card 8 (SMS Import)
     │               │
@@ -315,8 +324,8 @@ Card 1 (Database) ✅
 | Risk | Mitigation in this order |
 |------|--------------------------|
 | Database schema drift | Alembic (Card 1) ensures versioned migrations |
-| Tenant data leak | RLS (Card 2) before any real data |
-| Support can't debug | Admin bypass (Card 3) enables safe support access |
+| Tenant data leak | RLS (Card 2) + child-table RLS (Card 2a) before any real data |
+| Support can't debug | Admin access (Card 3) enables safe support access |
 | App has no default data | Seed data (Card 4) makes app usable |
 | Users can't sign up | Auth completion (Card 5) fixes onboarding |
 | Regressions from changes | Tests (Card 6) catch issues early |
@@ -328,23 +337,13 @@ Card 1 (Database) ✅
 
 ## Exact Recommended Next Card
 
-### Card 3: PF-103B — Safe Super Admin RLS Bypass Design
-
-**OR**
-
 ### Card 4: SAAS-200-SEED — Seed Default Data (Chart of Accounts, Categories, Plans)
 
-**Decision:** If operational support (debugging tenant issues) is the priority, start with **PF-103B**. If making the application usable for users is the priority, start with **SAAS-200-SEED**.
-
-Both cards are safe to implement now. The database is initialized, RLS is active, and the foundation is solid.
-
-**What to tell the coding agent for PF-103B:**
-
-> "Implement Card PF-103B: Safe Super Admin RLS Bypass Design. Design a mechanism for support staff to view tenant data for debugging without creating a security hole. Do NOT use a simple GUC flag. Consider: separate admin DB role, explicit admin connection pool, or audit-logged bypass. All admin queries must be logged to audit_logs. Normal app user must not bypass RLS. Document the security implications."
+**Decision:** PF-103B is complete. The security foundation (RLS + child-table coverage + safe admin access) is now in place. The next priority is making the application usable by seeding default data.
 
 **What to tell the coding agent for SAAS-200-SEED:**
 
-> "Implement Card SAAS-200-SEED: Seed Default Data. Create scripts/seed_data.py that seeds: (1) default Chart of Accounts (Asset, Liability, Equity, Income, Expense categories with standard accounts), (2) default transaction categories (Dining, Transport, Bills, Shopping, etc.), (3) subscription plans (Free, Premium, Family) with limits. Make seeding idempotent. Run against the development database."
+> "Implement Card SAAS-200-SEED: Seed Default Data. Create scripts/seed_data.py that seeds: (1) default Chart of Accounts (Asset, Liability, Equity, Income, Expense categories with standard accounts), (2) default transaction categories (Dining, Transport, Bills, Shopping, etc.), (3) subscription plans (Free, Premium, Family) with limits. Make seeding idempotent. Respect tenant context with SET LOCAL app.current_tenant_id. Run against the development database."
 
 ---
 
@@ -353,7 +352,7 @@ Both cards are safe to implement now. The database is initialized, RLS is active
 Once these 10 cards are complete, the project will have:
 
 - A working database with all tables and RLS
-- Security via RLS + admin bypass
+- Security via RLS + child-table RLS + safe admin access
 - Default data seeded
 - Complete authentication
 - Test coverage for critical paths
