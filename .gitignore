@@ -75,3 +75,5 @@ prompt_*.txt
 *.bak
 *.tmp
 *.old
+Next_KIMI_prompt.txt
+*_KIMI_prompt.txt
