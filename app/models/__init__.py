@@ -15,4 +15,5 @@ from app.models.document import Document, DocumentType
 from app.models.notification import Notification, NotificationSetting, NotificationType, NotificationChannel
 from app.models.ai import AIInsight, AIReport, AIChatSession, AIChatMessage, AIInsightType, AIInsightPriority
 from app.models.audit import AuditLog, SystemEvent
+from app.models.admin_access import AdminAccessSession, AdminAccessStatus
 from app.models.analytics import UserActivity, FeatureUsage, AITokenUsage
