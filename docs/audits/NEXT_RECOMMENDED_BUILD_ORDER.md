@@ -69,27 +69,32 @@ The next 10 cards must focus on **making the application usable**: seed data, co
 
 ---
 
-### Card 4: SAAS-200-SEED — Seed Default Data (Chart of Accounts, Categories, Plans)
+### Card 4: SAAS-200-SEED — Seed Default Data (Chart of Accounts, Categories, Plans) ✅ DONE
 **PLAN_V2 Reference:** ACC-500 (Chart of Accounts) + SAAS-202 (Subscription Plans)  
 **Type:** Data / Migration  
 **Priority:** HIGH
 
-**What to do:**
-- Create `scripts/seed_data.py`
-- Seed default Chart of Accounts (per Appendix B of PLAN_V2.md)
-- Seed default transaction categories (Dining, Transport, Bills, etc.)
-- Seed subscription plans (Free, Premium, Family) with limits
-- Create a seed CLI command: `python scripts/seed_data.py`
-- Make seeding idempotent (can run multiple times safely)
+**Completed:**
+- Created `scripts/seed_default_data.py` and `app/seeds/default_data.py`.
+- Seeded development tenant `dev-family` with Family plan limits.
+- Seeded development super-admin (email/password from env or generated temp password).
+- Seeded 31-account OMR-friendly Chart of Accounts under the dev tenant.
+- Seeded default monthly budget with 14 categories linked to expense accounts.
+- Seeded 8 default notification preferences for the dev user.
+- Seed is idempotent; running twice creates no duplicates.
+- 9 integration tests pass.
 
-**Why fourth:** The application needs default data to be usable. A new tenant should have a working COA and categories immediately.
+**Remaining:**
+- No dedicated `plans` table yet; limits are columns on `organizations`.
+- No general transaction categories table yet; `BudgetCategory` is budget-specific.
+- Future cards: `SAAS-202` (plan table) and `TRX-604A` (transaction categories).
 
 **Acceptance criteria:**
-- [ ] Default COA is created for new tenants
-- [ ] Default categories exist
-- [ ] Plans are seeded with correct limits
-- [ ] Seeding is idempotent
-- [ ] Seed script is documented
+- [x] Default COA is created for new tenants
+- [x] Default categories exist (budget categories)
+- [x] Plans are seeded with correct limits
+- [x] Seeding is idempotent
+- [x] Seed script is documented
 
 **Estimated effort:** 2-3 hours
 
@@ -292,7 +297,8 @@ Card 1: Database          → DONE ✅
 Card 2: RLS               → DONE ✅
 Card 2a: Child Table RLS  → DONE ✅
 Card 3: Admin Access      → DONE ✅
-Card 4: Seed Data         → Usability. App needs defaults to function.
+Card 4: Seed Data         → DONE ✅
+Card 5: Auth Completion   → Gateway. Users can't onboard without it.
 Card 5: Auth Completion   → Gateway. Users can't onboard without it.
 Card 6: Tests             → Confidence. Protects against regressions.
 Card 7: CSV Import        → Data Entry. Primary user workflow.
@@ -308,7 +314,7 @@ Card 1 (Database) ✅
     │
     ├──→ Card 2 (RLS) ✅ ──→ Card 2a (Child Table RLS) ✅ ──→ Card 3 (Admin Access) ✅
     │       │                                                              │
-    │       │                                                              └──→ Card 4 (Seed Data)
+    │       │                                                              └──→ Card 4 (Seed Data) ✅
     │       │                                                                     │
     │       │                                                                     └──→ Card 5 (Auth) ──→ Card 6 (Tests)
     │       │
@@ -329,6 +335,7 @@ Card 1 (Database) ✅
 | App has no default data | Seed data (Card 4) makes app usable |
 | Users can't sign up | Auth completion (Card 5) fixes onboarding |
 | Regressions from changes | Tests (Card 6) catch issues early |
+| Regressions from changes | Tests (Card 6) catch issues early |
 | Users can't enter data | CSV/SMS import (Cards 7-8) enables data entry |
 | Product is just accounting | LLM (Card 9) adds intelligence |
 | Missing core features | Bills/Subs (Card 10) completes MVP |
@@ -337,13 +344,13 @@ Card 1 (Database) ✅
 
 ## Exact Recommended Next Card
 
-### Card 4: SAAS-200-SEED — Seed Default Data (Chart of Accounts, Categories, Plans)
+### Card 5: AUTH-300-FIX — Complete Authentication Flow (Email, RBAC Guards)
 
-**Decision:** PF-103B is complete. The security foundation (RLS + child-table coverage + safe admin access) is now in place. The next priority is making the application usable by seeding default data.
+**Decision:** SAAS-200-SEED is complete. The database, RLS, admin access, and default data are now in place. The next priority is completing authentication so the seeded development tenant and super-admin can actually log in and use the application.
 
-**What to tell the coding agent for SAAS-200-SEED:**
+**What to tell the coding agent for AUTH-300-FIX:**
 
-> "Implement Card SAAS-200-SEED: Seed Default Data. Create scripts/seed_data.py that seeds: (1) default Chart of Accounts (Asset, Liability, Equity, Income, Expense categories with standard accounts), (2) default transaction categories (Dining, Transport, Bills, Shopping, etc.), (3) subscription plans (Free, Premium, Family) with limits. Make seeding idempotent. Respect tenant context with SET LOCAL app.current_tenant_id. Run against the development database."
+> "Implement Card AUTH-300-FIX: Complete Authentication Flow. Implement email sending (SMTP or console backend for dev), add email verification and password reset templates, add `require_role` decorators and resource-level permission checks, fix JWT token expiry to 15-minute access + 7-day refresh, and add a logout endpoint that revokes refresh tokens. Do not weaken RLS. Run `python -m pytest -q` after changes."
 
 ---
 
