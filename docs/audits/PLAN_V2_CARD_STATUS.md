@@ -39,6 +39,7 @@
 | PF-101 | Database Layer: SQLAlchemy, Alembic, Base Models | **Done** | Alembic initialized, 2 migrations, 39 tables, RLS policies | `created_by`/`updated_by` missing from mixins | Add audit fields to mixins |
 | PF-102 | Logging, Exception Handling, and Middleware | **Done** | `app/middleware/logging.py`, `app/middleware/error_handling.py` | No correlation ID middleware | Add correlation ID |
 | PF-103 | PostgreSQL RLS Implementation | **Done** | 24 tables with RLS+FORCE, 96 policies, `app/core/rls.py`, middleware sets DB context | No super admin bypass | Implement PF-103B for admin bypass |
+| PF-103C | RLS Coverage Audit for Child Tables | **Done** | 6 child/tenant tables now protected (30 total RLS tables, 120 policies), `app/tests/integration/test_rls_child_tables.py` passes | Super admin bypass still deferred | Implement PF-103B |
 | SAAS-200 | Tenant Model and CRUD | **Partial** | `Organization` model with CRUD fields | Named "Organization" not "Tenant"; no `Plan` model separate from enum | Rename or alias; extract Plan model |
 | SAAS-201 | Tenant Isolation Middleware | **Done** | `TenantScopingMiddleware` extracts tenant_id from JWT and sets DB RLS context | Application-level + DB-level RLS both active | Monitor for performance impact |
 | SAAS-202 | Subscription Plans (Free, Premium, Family) | **Partial** | `SubscriptionPlan` enum with 4 plans | No plan feature flags, no limit enforcement logic | Add feature checking service |

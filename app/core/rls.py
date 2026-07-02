@@ -134,22 +134,68 @@ TENANT_SCOPED_TABLES = [
     "user_activities",
 ]
 
-# Tables that are global/shared and should NOT have RLS
-# These tables either have no tenant_id or are system-level.
+# Child tables that do NOT have a direct tenant_id column but are
+# tenant-scoped through a parent table that has RLS. These receive
+# join-based RLS policies using EXISTS(...) to the parent.
+CHILD_TABLES = {
+    # table_name: (parent_table, parent_pk, child_fk)
+    "ai_chat_messages": ("ai_chat_sessions", "id", "session_id"),
+    "budget_categories": ("budgets", "id", "budget_id"),
+    "credit_score_history": ("credit_profiles", "id", "credit_profile_id"),
+    "goal_contributions": ("goals", "id", "goal_id"),
+    "loan_payments": ("loans", "id", "loan_id"),
+}
+
+# Tenant-level tables that use organization_id as the tenant identifier
+# instead of a tenant_id column. These receive RLS policies keyed on
+# organization_id, matching the current tenant context GUC.
+ORGANIZATION_SCOPED_TABLES = [
+    "tenant_subscriptions",
+]
+
+# Tables that are global/shared and should NOT have RLS.
+# These tables either have no tenant_id, are system-level, or are
+# auth/user-scoped and require cross-tenant lookup before tenant context
+# can be established.
 GLOBAL_TABLES = [
-    "alembic_version",        # Migration tracking
+    "alembic_version",        # Alembic internal migration tracking
     "organizations",          # The tenant table itself
-    "users",                  # Cross-tenant user lookup (linked via org)
-    "family_members",         # Linked to users
+    "users",                  # Auth lookup by email; app-level org filtering
+    "family_members",         # User-scoped (app-level user filtering)
     "refresh_tokens",         # Auth system
     "email_verifications",    # Auth system
     "password_resets",        # Auth system
-    "notification_settings",  # Per-user, not per-tenant
-    "budget_categories",      # Child of budgets (RLS via parent)
-    "goal_contributions",     # Child of goals (RLS via parent)
-    "loan_payments",          # Child of loans (RLS via parent)
-    "credit_score_history",   # Child of credit_profiles
+    "notification_settings",  # Per-user preferences (app-level user filtering)
     "system_events",          # System-level logging
-    "tenant_subscriptions",   # Billing records
-    "ai_chat_messages",       # Child of ai_chat_sessions (RLS via parent)
 ]
+
+
+def get_child_rls_policy_sql(
+    table_name: str,
+    parent_table: str,
+    parent_pk: str,
+    child_fk: str,
+    tenant_id_type: str = "INTEGER",
+) -> str:
+    """Generate an EXISTS-based RLS expression for a child table.
+
+    The expression checks that the referenced parent row belongs to the
+    current tenant. Used for tables that inherit tenancy from a parent.
+    """
+    return (
+        f"EXISTS ("
+        f"SELECT 1 FROM {parent_table} "
+        f"WHERE {parent_table}.{parent_pk} = {table_name}.{child_fk} "
+        f"AND {parent_table}.tenant_id = NULLIF(current_setting('{TENANT_GUC}', true), '')::{tenant_id_type}"
+        f")"
+    )
+
+
+def get_organization_rls_policy_sql(
+    table_name: str,
+    tenant_id_type: str = "INTEGER",
+) -> str:
+    """Generate an RLS expression for a table scoped by organization_id."""
+    return (
+        f"organization_id = NULLIF(current_setting('{TENANT_GUC}', true), '')::{tenant_id_type}"
+    )
