@@ -88,7 +88,7 @@
 | BILL-800 to BILL-801 | Bills | **Done** (`app/routers/bills.py`, CRUD, mark-paid, upcoming/overdue, dashboard summary, tests) |
 | SUB-900 to SUB-901 | Subscriptions | **Done** (`app/routers/subscriptions.py`, CRUD, pause/cancel/activate, renewals, equivalent amounts, tests) |
 | BDG-1000 to BDG-1003 | Budgets | Partial (models, routes, service exist) |
-| DB-1100 to DB-1105 | Dashboard | Partial (main dashboard works, widgets incomplete) |
+| DB-1100 to DB-1105 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI; Partial for remaining dashboard widgets |
 | AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client; Partial for remaining AI engines (health score, chat, what-if, orchestrator exist but not all wired to LLM) |
 | FAM-1300 to FAM-1305 | Family Finance | Partial (FamilyMember model only) |
 | GOAL-1400 to GOAL-1402 | Goals | Partial (models, routes, service exist) |
@@ -122,8 +122,8 @@
 
 ### Medium Priority (Important for V1)
 8. ~~**BILL-800 / SUB-900** — Bills and subscriptions (models exist, need routers)~~ **DONE**
-9. **DB-1101 to DB-1105** — Dashboard widgets
-10. **NOTIF-1600** — Email notifications (SMTP integration)
+9. ~~**DB-1104A** — Bills and subscriptions dashboard widget UI~~ **DONE**
+10. ~~**NOTIF-1600** — Email notifications (SMTP integration)~~ **DONE**
 11. ~~**Tests** — Formalized test infrastructure (conftest, helpers, smoke suite)~~ **DONE**
 
 ### Lower Priority (Can Defer)

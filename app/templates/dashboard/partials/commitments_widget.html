@@ -1,0 +1,91 @@
+<div id="commitments-widget" class="commitments-widget">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h6 class="mb-0">
+            <i class="bi bi-calendar-week text-primary me-2"></i>
+            Bills & Subscriptions
+        </h6>
+        <div class="d-flex gap-2 align-items-center">
+            {% if is_admin %}
+            <button
+                class="btn btn-sm btn-outline-primary"
+                hx-post="/dashboard/partials/run-reminders"
+                hx-target="#commitments-widget"
+                hx-swap="outerHTML"
+                hx-confirm="Generate reminders for upcoming and overdue bills?"
+            >
+                <i class="bi bi-bell me-1"></i> Run Reminders
+            </button>
+            {% endif %}
+            <button
+                class="btn btn-sm btn-outline-secondary"
+                hx-get="/dashboard/partials/commitments"
+                hx-target="#commitments-widget"
+                hx-swap="outerHTML"
+            >
+                <i class="bi bi-arrow-clockwise"></i>
+            </button>
+        </div>
+    </div>
+
+    <div class="card-body">
+        <!-- Summary Row -->
+        <div class="row g-3 mb-4">
+            <div class="col-sm-6 col-lg-3">
+                <div class="stat-card stat-card-sm">
+                    <p class="card-label text-muted mb-1">Upcoming Bills</p>
+                    <h5 class="card-value mb-0">
+                        {{ commitments.upcoming_bills_count }}
+                        <small class="text-muted fs-6">/ {{ currency }} {{ "%.3f"|format(commitments.upcoming_bills_total) }}</small>
+                    </h5>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <div class="stat-card stat-card-sm border-danger-subtle">
+                    <p class="card-label text-muted mb-1">Overdue Bills</p>
+                    <h5 class="card-value mb-0 text-danger">
+                        {{ commitments.overdue_bills_count }}
+                        <small class="fs-6">/ {{ currency }} {{ "%.3f"|format(commitments.overdue_bills_total) }}</small>
+                    </h5>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <div class="stat-card stat-card-sm">
+                    <p class="card-label text-muted mb-1">Renewals (30d)</p>
+                    <h5 class="card-value mb-0">
+                        {{ commitments.upcoming_renewals_count }}
+                        <small class="text-muted fs-6">/ {{ currency }} {{ "%.3f"|format(commitments.upcoming_renewals_total) }}</small>
+                    </h5>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <div class="stat-card stat-card-sm">
+                    <p class="card-label text-muted mb-1">Monthly Subscriptions</p>
+                    <h5 class="card-value mb-0">
+                        {{ currency }} {{ "%.3f"|format(commitments.monthly_subscription_total) }}
+                    </h5>
+                </div>
+            </div>
+        </div>
+
+        <!-- Detailed Sections -->
+        <div class="row g-4">
+            <div class="col-lg-4">
+                {% include "dashboard/partials/upcoming_bills.html" %}
+            </div>
+            <div class="col-lg-4">
+                {% include "dashboard/partials/overdue_bills.html" %}
+            </div>
+            <div class="col-lg-4">
+                {% include "dashboard/partials/upcoming_subscriptions.html" %}
+            </div>
+        </div>
+
+        <!-- Total Commitments Footer -->
+        <div class="mt-4 p-3 bg-light rounded">
+            <div class="d-flex justify-content-between align-items-center">
+                <span class="text-muted">Total Fixed Commitments This Month</span>
+                <span class="fw-bold fs-5">{{ currency }} {{ "%.3f"|format(commitments.total_fixed_commitments_this_month) }}</span>
+            </div>
+        </div>
+    </div>
+</div>

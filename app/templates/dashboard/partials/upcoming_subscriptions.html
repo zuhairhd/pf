@@ -1,0 +1,27 @@
+<div class="commitment-section">
+    <h6 class="mb-3">
+        <i class="bi bi-arrow-repeat text-info me-2"></i>Upcoming Renewals
+    </h6>
+
+    {% if commitments.upcoming_renewals %}
+    <div class="list-group list-group-flush">
+        {% for sub in commitments.upcoming_renewals %}
+        <div class="list-group-item px-0 py-2 d-flex justify-content-between align-items-start">
+            <div>
+                <div class="fw-medium">{{ sub.name }}</div>
+                <div class="small text-muted">{{ sub.provider }} · Renews {{ sub.next_billing_date }}</div>
+            </div>
+            <div class="text-end">
+                <div class="fw-medium">{{ currency }} {{ "%.3f"|format(sub.amount) }}</div>
+                <div class="small text-muted">{{ sub.frequency }}</div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-center py-4">
+        <i class="bi bi-calendar-check fs-1 text-muted mb-2"></i>
+        <p class="text-muted mb-0 small">No subscription renewals in the next 30 days.</p>
+    </div>
+    {% endif %}
+</div>

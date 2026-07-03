@@ -44,8 +44,24 @@
                 <i class="bi bi-credit-card"></i>
                 <span>Loans</span>
             </a>
+            <a class="nav-link {% if request.url.path.startswith('/bills') %}active{% endif %}" href="/bills/">
+                <i class="bi bi-receipt"></i>
+                <span>Bills</span>
+            </a>
+            <a class="nav-link {% if request.url.path.startswith('/subscriptions') %}active{% endif %}" href="/subscriptions/">
+                <i class="bi bi-arrow-repeat"></i>
+                <span>Subscriptions</span>
+            </a>
         </div>
-        
+
+        <div class="nav-section">
+            <div class="nav-section-label">Financial Life</div>
+            <a class="nav-link {% if request.url.path.startswith('/notifications') %}active{% endif %}" href="/notifications/list">
+                <i class="bi bi-bell"></i>
+                <span>Notifications</span>
+            </a>
+        </div>
+
         <div class="nav-section">
             <div class="nav-section-label">Intelligence</div>
             <a class="nav-link {% if request.url.path.startswith('/ai') %}active{% endif %}" href="/ai/chat">

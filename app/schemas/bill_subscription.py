@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -115,3 +115,7 @@ class CommitmentSummary(BaseModel):
     upcoming_renewals_total: Decimal
     monthly_subscription_total: Decimal
     total_fixed_commitments_this_month: Decimal
+    upcoming_bills: List[BillResponse] = []
+    overdue_bills: List[BillResponse] = []
+    upcoming_renewals: List[SubscriptionResponse] = []
+    currency: str = "OMR"

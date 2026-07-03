@@ -1,0 +1,36 @@
+<div class="commitment-section">
+    <h6 class="mb-3">
+        <i class="bi bi-clock text-primary me-2"></i>Upcoming Bills
+    </h6>
+
+    {% if commitments.upcoming_bills %}
+    <div class="list-group list-group-flush">
+        {% for bill in commitments.upcoming_bills %}
+        <div class="list-group-item px-0 py-2 d-flex justify-content-between align-items-start">
+            <div>
+                <div class="fw-medium">{{ bill.name }}</div>
+                <div class="small text-muted">{{ bill.provider }} · Due {{ bill.due_date }}</div>
+            </div>
+            <div class="text-end">
+                <div class="fw-medium">{{ currency }} {{ "%.3f"|format(bill.typical_amount) }}</div>
+                <div class="mt-1">
+                    <button
+                        class="btn btn-xs btn-outline-success"
+                        hx-post="/dashboard/partials/bills/{{ bill.id }}/mark-paid"
+                        hx-target="#commitments-widget"
+                        hx-swap="outerHTML"
+                    >
+                        Mark Paid
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-center py-4">
+        <i class="bi bi-check-circle fs-1 text-muted mb-2"></i>
+        <p class="text-muted mb-0 small">No upcoming bills for the next 7 days.</p>
+    </div>
+    {% endif %}
+</div>

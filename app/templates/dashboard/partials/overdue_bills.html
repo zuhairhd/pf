@@ -1,0 +1,36 @@
+<div class="commitment-section">
+    <h6 class="mb-3">
+        <i class="bi bi-exclamation-triangle text-danger me-2"></i>Overdue Bills
+    </h6>
+
+    {% if commitments.overdue_bills %}
+    <div class="list-group list-group-flush">
+        {% for bill in commitments.overdue_bills %}
+        <div class="list-group-item px-0 py-2 d-flex justify-content-between align-items-start border-danger-subtle">
+            <div>
+                <div class="fw-medium">{{ bill.name }}</div>
+                <div class="small text-danger">{{ bill.provider }} · Was due {{ bill.due_date }}</div>
+            </div>
+            <div class="text-end">
+                <div class="fw-medium">{{ currency }} {{ "%.3f"|format(bill.typical_amount) }}</div>
+                <div class="mt-1">
+                    <button
+                        class="btn btn-xs btn-outline-success"
+                        hx-post="/dashboard/partials/bills/{{ bill.id }}/mark-paid"
+                        hx-target="#commitments-widget"
+                        hx-swap="outerHTML"
+                    >
+                        Mark Paid
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-center py-4">
+        <i class="bi bi-check-circle fs-1 text-success mb-2"></i>
+        <p class="text-muted mb-0 small">No overdue bills. Great job!</p>
+    </div>
+    {% endif %}
+</div>

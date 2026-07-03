@@ -309,6 +309,7 @@ Card 8: SMS Import        → DONE ✅
 Card 9: LLM Integration   → DONE ✅ Intelligence. Core product value.
 Card 10: Bills/Subs       → DONE ✅ Features. Completes Financial Life MVP.
 Card 11: Notifications    → DONE ✅ Engagement. Reminders for bills/subscriptions.
+Card 12: Dashboard Widgets → DONE ✅ Visibility. Surface commitments and notifications.
 ```
 
 ### Dependencies Graph
@@ -373,21 +374,54 @@ Card 1 (Database) ✅
 
 ---
 
-## Exact Recommended Next Card
+## Completed Card 12
 
-### Card 12: DB-1104A — Bills and Subscriptions Dashboard Widget UI
+### Card 12: DB-1104A — Bills and Subscriptions Dashboard Widget UI ✅ DONE
+**PLAN_V2 Reference:** DB-1104 (Dashboard Widgets) + BILL-800/SUB-900/NOTIF-1600  
+**Type:** UI / Feature Completion  
+**Priority:** MEDIUM-HIGH
 
-**Decision:** The backend now supports bills, subscriptions, notifications, and a `/dashboard/api/commitments` service endpoint. The next logical step is to surface this information on the main dashboard so users can see upcoming bills, overdue items, subscription renewals, and recent notifications in one place. DB-1104A is a UI-only card that consumes existing APIs and does not require new models or migrations.
+**Completed:**
+- Updated `/dashboard/` route to require authentication and tenant membership, load commitments, and pass them to the template.
+- Extended `/dashboard/api/commitments` to return UI-ready JSON including serialized upcoming bills, overdue bills, upcoming renewals, totals, counts, and currency.
+- Added HTMX-enabled partial routes:
+  - `GET /dashboard/partials/commitments`
+  - `POST /dashboard/partials/bills/{id}/mark-paid`
+  - `POST /dashboard/partials/run-reminders`
+- Added templates:
+  - `app/templates/dashboard/partials/commitments_widget.html`
+  - `app/templates/dashboard/partials/upcoming_bills.html`
+  - `app/templates/dashboard/partials/overdue_bills.html`
+  - `app/templates/dashboard/partials/upcoming_subscriptions.html`
+- Added empty states for no data, summary cards, and quick actions.
+- Updated `base.html` navigation with Bills, Subscriptions, and Notifications links.
+- Added widget-specific CSS.
+- Added defensive error handling around the pre-existing `HealthScoreService`/`Account.current_balance` mismatch so the dashboard renders.
+- Added 13 dashboard widget integration tests; full suite **146 passed, 1 skipped**.
 
-**What to tell the coding agent for DB-1104A:**
+**Remaining:**
+- Other dashboard widgets (net worth, cash flow, AI insights surface) are still partial.
+- HTMX quick actions rely on the client sending the JWT Authorization header; a cookie-based or inline-token mechanism may be added later.
 
-> "Implement Card DB-1104A: Update the dashboard template and route to display widgets for upcoming bills, overdue bills, upcoming subscription renewals, monthly subscription total, total fixed commitments, and recent unread notifications. Consume the existing `/dashboard/api/commitments` and `/notifications` endpoints. Keep the UI simple, tenant-scoped, and mobile-friendly. Do not disable RLS, do not build payment processing, and run `python -m pytest -q` after changes."
+**Test results:** 146 passed, 1 skipped
 
 ---
 
-## After Card 11
+## Exact Recommended Next Card
 
-Once these 11 cards are complete, the project will have:
+### Card 13: BILL-801A — Bill Payment Posting Through Accounting Engine
+
+**Decision:** Bills and subscriptions can now be marked paid, but the `mark-paid` operation only updates status. The next logical step is to post an actual journal entry through the double-entry accounting engine when a bill or subscription is paid, ensuring the general ledger stays accurate.
+
+**What to tell the coding agent for BILL-801A:**
+
+> "Implement Card BILL-801A: When a bill or subscription is marked paid, create a balanced journal entry via the existing `AccountingService` (debit expense/liability, credit bank/cash). Add safe defaults for debit/credit accounts, handle missing accounts gracefully, and ensure RLS remains enforced. Add tests proving the journal entry is created and the account balances move correctly. Run `python -m pytest -q` after changes."
+
+---
+
+## After Card 12
+
+Once these 12 cards are complete, the project will have:
 
 - A working database with all tables and RLS
 - Security via RLS + child-table RLS + safe admin access
@@ -398,12 +432,13 @@ Once these 11 cards are complete, the project will have:
 - AI intelligence via LLM
 - Bills and subscriptions tracking
 - Email notifications and bill/subscription reminders
+- Bills and subscriptions dashboard widget UI
 
-**Next batch (Cards 12-21):**
+**Next batch (Cards 13-22):**
+- Bill payment posting through accounting engine (BILL-801A)
 - Family finance module (FAM-1300)
 - Reports (REP-2000)
 - Document OCR (DOC-2100)
-- Notification channels (NOTIF-1600)
 - What-If Simulator (AI-1214)
 - Debt Optimizer (AI-1211)
 - Savings Optimizer (AI-1212)

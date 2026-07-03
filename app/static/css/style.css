@@ -371,6 +371,41 @@ body {
     border-radius: 12px 12px 0 0;
 }
 
+/* ─── COMMITMENTS WIDGET ─── */
+.commitments-widget .card-header {
+    background: transparent;
+    border-bottom: 1px solid var(--border-color);
+    padding: 1rem 1.25rem;
+}
+
+.commitment-section .list-group-item {
+    border-left: 0;
+    border-right: 0;
+}
+
+.commitment-section .list-group-item:first-child {
+    border-top: 0;
+}
+
+.commitment-section .list-group-item:last-child {
+    border-bottom: 0;
+}
+
+.btn-xs {
+    padding: 0.2rem 0.4rem;
+    font-size: 0.75rem;
+    line-height: 1;
+    border-radius: 0.25rem;
+}
+
+.stat-card-sm {
+    padding: 0.75rem 1rem;
+}
+
+.stat-card-sm .card-value {
+    font-size: 1.15rem;
+}
+
 /* ─── RESPONSIVE ─── */
 @media (max-width: 768px) {
     #sidebar {
