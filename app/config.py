@@ -25,22 +25,26 @@ class Settings(BaseSettings):
     JWT_ACCESS_EXPIRATION_MINUTES: int = 15  # Access token lifetime
     JWT_REFRESH_EXPIRATION_DAYS: int = 7  # Refresh token lifetime
     
-    # Email
+    # Email / Notifications
     EMAIL_DEV_MODE: bool = True  # When True, email links are logged instead of sent
-    
+    EMAIL_BACKEND: str = "console"  # console | smtp | disabled
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_USE_TLS: bool = True
+    EMAIL_FROM: str = "noreply@pf-ai.com"
+    EMAIL_FROM_NAME: str = "PF AI Personal Finance"
+    NOTIFICATIONS_ENABLED: bool = True
+    BILL_REMINDER_DAYS_DEFAULT: int = 3
+    SUBSCRIPTION_REMINDER_DAYS_DEFAULT: int = 7
+
     # AI / OpenAI
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o-mini"
     OPENAI_MODEL_PREMIUM: str = "gpt-4o"
     AI_MAX_REQUESTS_PER_DAY_FREE: int = 5
     AI_MAX_REQUESTS_PER_DAY_PREMIUM: int = 50
-    
-    # Email
-    SMTP_HOST: str = ""
-    SMTP_PORT: int = 587
-    SMTP_USER: str = ""
-    SMTP_PASSWORD: str = ""
-    EMAIL_FROM: str = "noreply@pf-ai.com"
     
     # File Storage
     UPLOAD_DIR: str = "uploads"

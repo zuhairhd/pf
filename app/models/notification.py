@@ -12,6 +12,7 @@ class NotificationType(str, enum.Enum):
     BUDGET_ALERT = "budget_alert"
     GOAL_MILESTONE = "goal_milestone"
     BILL_DUE = "bill_due"
+    BILL_OVERDUE = "bill_overdue"
     AI_INSIGHT = "ai_insight"
     AI_RECOMMENDATION = "ai_recommendation"
     ANOMALY_DETECTED = "anomaly_detected"
@@ -26,21 +27,40 @@ class NotificationChannel(str, enum.Enum):
     SMS = "sms"
 
 
+class NotificationStatus(str, enum.Enum):
+    PENDING = "pending"
+    SENT = "sent"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+    READ = "read"
+
+
 class Notification(Base, TimestampMixin, TenantMixin):
-    """An in-app notification."""
+    """An in-app or email notification."""
     __tablename__ = "notifications"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     notification_type = Column(SQLEnum(NotificationType), nullable=False)
     title = Column(String(200), nullable=False)
     message = Column(Text, nullable=False)
+    channel = Column(SQLEnum(NotificationChannel), default=NotificationChannel.IN_APP, nullable=False)
+    status = Column(SQLEnum(NotificationStatus), default=NotificationStatus.PENDING, nullable=False)
     is_read = Column(Boolean, default=False, nullable=False)
     read_at = Column(DateTime, nullable=True)
-    
+    scheduled_for = Column(DateTime, nullable=True)
+    sent_at = Column(DateTime, nullable=True)
+    error_message = Column(Text, nullable=True)
+
+    # Related entity (bill, subscription, etc.)
+    related_entity_type = Column(String(50), nullable=True)
+    related_entity_id = Column(Integer, nullable=True)
+
     # AI-generated
     ai_confidence = Column(Numeric(5, 2), nullable=True)
     ai_action_url = Column(String(500), nullable=True)
+
+    user = relationship("User", lazy="selectin")
 
 
 class NotificationSetting(Base, TimestampMixin):

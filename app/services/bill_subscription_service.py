@@ -22,6 +22,24 @@ FREQUENCY_DAYS = {
 }
 
 
+def _coerce_date(value) -> date:
+    """Convert a date-like payload value into a Python date."""
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, str):
+        return date.fromisoformat(value)
+    raise ValueError(f"Unsupported date value: {value!r}")
+
+
+def _coerce_decimal(value) -> Decimal:
+    """Convert a numeric payload value into a Decimal."""
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value))
+
+
 class BillService:
     """CRUD and status operations for bills."""
 
@@ -37,8 +55,8 @@ class BillService:
             tenant_id=self.tenant_id,
             name=data["name"],
             provider=data["provider"],
-            typical_amount=data["typical_amount"],
-            due_date=data["due_date"],
+            typical_amount=_coerce_decimal(data["typical_amount"]),
+            due_date=_coerce_date(data["due_date"]),
             frequency=data.get("frequency", "monthly"),
             is_auto_pay=data.get("is_auto_pay", False),
             payment_method=data.get("payment_method"),
@@ -76,7 +94,12 @@ class BillService:
     async def update(self, bill: Bill, data: dict) -> Bill:
         for field in ("name", "provider", "typical_amount", "due_date", "frequency", "is_auto_pay", "payment_method"):
             if field in data and data[field] is not None:
-                setattr(bill, field, data[field])
+                value = data[field]
+                if field == "due_date":
+                    value = _coerce_date(value)
+                elif field == "typical_amount":
+                    value = _coerce_decimal(value)
+                setattr(bill, field, value)
         await self.db.commit()
         await self.db.refresh(bill)
         return bill
@@ -127,9 +150,9 @@ class SubscriptionService:
             tenant_id=self.tenant_id,
             name=data["name"],
             provider=data["provider"],
-            amount=data["amount"],
+            amount=_coerce_decimal(data["amount"]),
             frequency=data.get("frequency", "monthly"),
-            next_billing_date=data["next_billing_date"],
+            next_billing_date=_coerce_date(data["next_billing_date"]),
             category=data.get("category"),
             account_id=data.get("account_id"),
             status=SubscriptionStatus.ACTIVE,
@@ -160,7 +183,12 @@ class SubscriptionService:
     async def update(self, subscription: Subscription, data: dict) -> Subscription:
         for field in ("name", "provider", "amount", "frequency", "next_billing_date", "category", "account_id"):
             if field in data and data[field] is not None:
-                setattr(subscription, field, data[field])
+                value = data[field]
+                if field == "next_billing_date":
+                    value = _coerce_date(value)
+                elif field == "amount":
+                    value = _coerce_decimal(value)
+                setattr(subscription, field, value)
         await self.db.commit()
         await self.db.refresh(subscription)
         return subscription

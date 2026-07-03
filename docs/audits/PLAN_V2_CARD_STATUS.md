@@ -66,7 +66,7 @@
 
 | Status | Count | Cards |
 |--------|-------|-------|
-| **Done** | 21 | PF-000, PF-001, PF-003, PF-005, PF-011, PF-012, PF-014, PF-101, PF-103, PF-103C, PF-103B, SAAS-200-SEED, PF-100-TEST, SAAS-201, USR-401, AUTH-300, AUTH-301, AUTH-302, AUTH-303, AUTH-304, AI-1201 |
+| **Done** | 22 | PF-000, PF-001, PF-003, PF-005, PF-011, PF-012, PF-014, PF-101, PF-103, PF-103C, PF-103B, SAAS-200-SEED, PF-100-TEST, SAAS-201, USR-401, AUTH-300, AUTH-301, AUTH-302, AUTH-303, AUTH-304, AI-1201, NOTIF-1600 |
 | **Partial** | 16 | PF-004, PF-006, PF-007, PF-010, PF-015, PF-100, PF-102, SAAS-200, SAAS-202, SAAS-203, AUTH-305, USR-400, USR-402, ACC-500, ACC-501, ACC-502 |
 | **Missing** | 0 | — |
 | **Should Refactor** | 2 | PF-002, PF-013 |
@@ -93,7 +93,7 @@
 | FAM-1300 to FAM-1305 | Family Finance | Partial (FamilyMember model only) |
 | GOAL-1400 to GOAL-1402 | Goals | Partial (models, routes, service exist) |
 | LOAN-1500 to LOAN-1505 | Loans | Partial (models, routes, service exist) |
-| NOTIF-1600 to NOTIF-1604 | Notifications | Partial (models, routes, service exist) |
+| NOTIF-1600 to NOTIF-1604 | Notifications | **Done** for NOTIF-1600 (email backend, reminder generation, CRUD/preferences routes, tests); Partial for remaining notification channels |
 | ADMIN-1700 to ADMIN-1704 | Admin | Partial (router exists, limited functionality) |
 | BILLING-1800 to BILLING-1803 | Billing | **Missing** (Stripe fields on model only) |
 | API-1900 to API-1903 | API | **Missing** (no public API) |

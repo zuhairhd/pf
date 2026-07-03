@@ -308,6 +308,7 @@ Card 7: CSV Import        → DONE ✅
 Card 8: SMS Import        → DONE ✅
 Card 9: LLM Integration   → DONE ✅ Intelligence. Core product value.
 Card 10: Bills/Subs       → DONE ✅ Features. Completes Financial Life MVP.
+Card 11: Notifications    → DONE ✅ Engagement. Reminders for bills/subscriptions.
 ```
 
 ### Dependencies Graph
@@ -344,21 +345,49 @@ Card 1 (Database) ✅
 
 ---
 
-## Exact Recommended Next Card
+## Completed Card 11
 
-### Card 11: NOTIF-1600 — Email Notifications and Bill/Subscription Reminders
+### Card 11: NOTIF-1600 — Email Notifications and Bill/Subscription Reminders ✅ DONE
+**PLAN_V2 Reference:** NOTIF-1600 (Email Notifications) + BILL-800/SUB-900 (Reminders)  
+**Type:** Feature Completion  
+**Priority:** MEDIUM-HIGH
 
-**Decision:** Bills and subscriptions now have CRUD APIs and dashboard commitment summaries, but users still need to be notified about upcoming bills and renewal dates. The notification model and settings already exist, but there is no SMTP backend, no reminder scheduler, and no bill/subscription-specific alert logic. NOTIF-1600 is the natural next step because it enables the deferred reminder/alert behavior from BILL-800 / SUB-900.
+**Completed:**
+- Added safe email configuration (`EMAIL_BACKEND`, `SMTP_*`, `NOTIFICATIONS_ENABLED`, `BILL_REMINDER_DAYS_DEFAULT`, `SUBSCRIPTION_REMINDER_DAYS_DEFAULT`).
+- Extended `Notification` model with `channel`, `status`, `scheduled_for`, `sent_at`, `error_message`, `related_entity_type`, `related_entity_id`.
+- Created `app/notifications/channels/email.py` with console / disabled / SMTP backends and `EmailResult`.
+- Created `app/notifications/services.py` (`NotificationDeliveryService`) covering CRUD, preferences, email dispatch, and bill/subscription reminder generation with duplicate prevention.
+- Added JSON notification routes: `GET/POST /notifications`, `/unread-count`, `/{id}/read`, `/{id}/unread`, `/mark-all-read`, `/preferences`, `/test-email`, `/run-reminders`, `/send-pending-emails`.
+- Added `scripts/run_notification_reminders.py` for manual/dev reminder runs.
+- Updated Celery stubs in `app/tasks/notifications.py`.
+- Created Alembic migrations `196cef681c37` (extend notification model) and `334009b6ab5a` (add `BILL_OVERDUE` enum value, verify RLS).
+- Added 20 notification integration tests covering email backends, CRUD, preferences, reminders, duplicate prevention, tenant isolation, and RLS.
+- Full test suite: **133 passed, 1 skipped**.
 
-**What to tell the coding agent for NOTIF-1600:**
+**Remaining:**
+- SMS/WhatsApp/push channels (NOTIF-1601+).
+- Production Celery scheduling for reminders.
+- HTML email templates.
 
-> "Implement Card NOTIF-1600: Add a safe notification dispatch service that supports SMTP in production and console-only logging in development. Create scheduled/reminder logic for upcoming bills (due within N days) and subscription renewals, persisting notifications in the existing `Notification` model. Add endpoints to list/dismiss user notifications. Do not commit secrets, do not disable RLS, and run `python -m pytest -q` after changes."
+**Test results:** 133 passed, 1 skipped
 
 ---
 
-## After Card 10
+## Exact Recommended Next Card
 
-Once these 10 cards are complete, the project will have:
+### Card 12: DB-1104A — Bills and Subscriptions Dashboard Widget UI
+
+**Decision:** The backend now supports bills, subscriptions, notifications, and a `/dashboard/api/commitments` service endpoint. The next logical step is to surface this information on the main dashboard so users can see upcoming bills, overdue items, subscription renewals, and recent notifications in one place. DB-1104A is a UI-only card that consumes existing APIs and does not require new models or migrations.
+
+**What to tell the coding agent for DB-1104A:**
+
+> "Implement Card DB-1104A: Update the dashboard template and route to display widgets for upcoming bills, overdue bills, upcoming subscription renewals, monthly subscription total, total fixed commitments, and recent unread notifications. Consume the existing `/dashboard/api/commitments` and `/notifications` endpoints. Keep the UI simple, tenant-scoped, and mobile-friendly. Do not disable RLS, do not build payment processing, and run `python -m pytest -q` after changes."
+
+---
+
+## After Card 11
+
+Once these 11 cards are complete, the project will have:
 
 - A working database with all tables and RLS
 - Security via RLS + child-table RLS + safe admin access
@@ -368,8 +397,9 @@ Once these 10 cards are complete, the project will have:
 - CSV and SMS import (Oman-ready)
 - AI intelligence via LLM
 - Bills and subscriptions tracking
+- Email notifications and bill/subscription reminders
 
-**Next batch (Cards 11-20):**
+**Next batch (Cards 12-21):**
 - Family finance module (FAM-1300)
 - Reports (REP-2000)
 - Document OCR (DOC-2100)
