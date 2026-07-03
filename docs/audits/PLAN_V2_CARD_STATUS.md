@@ -85,8 +85,8 @@
 | IMP-701 | Excel Import | **Missing** |
 | IMP-702 | SMS Bank Alert Parser | **Done** (`app/imports/parsers/sms_parser.py`, `/imports/sms/parse`, tests) |
 | IMP-703 | Import UI Refinements | **Missing** |
-| BILL-800 to BILL-801 | Bills | Partial (model exists, no dedicated router) |
-| SUB-900 to SUB-901 | Subscriptions | Partial (model exists, no dedicated router) |
+| BILL-800 to BILL-801 | Bills | **Done** (`app/routers/bills.py`, CRUD, mark-paid, upcoming/overdue, dashboard summary, tests) |
+| SUB-900 to SUB-901 | Subscriptions | **Done** (`app/routers/subscriptions.py`, CRUD, pause/cancel/activate, renewals, equivalent amounts, tests) |
 | BDG-1000 to BDG-1003 | Budgets | Partial (models, routes, service exist) |
 | DB-1100 to DB-1105 | Dashboard | Partial (main dashboard works, widgets incomplete) |
 | AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client; Partial for remaining AI engines (health score, chat, what-if, orchestrator exist but not all wired to LLM) |
@@ -121,7 +121,7 @@
 8. **PF-002 / PF-013** — Structural alignment (gradual refactor)
 
 ### Medium Priority (Important for V1)
-8. **BILL-800 / SUB-900** — Bills and subscriptions (models exist, need routers)
+8. ~~**BILL-800 / SUB-900** — Bills and subscriptions (models exist, need routers)~~ **DONE**
 9. **DB-1101 to DB-1105** — Dashboard widgets
 10. **NOTIF-1600** — Email notifications (SMTP integration)
 11. ~~**Tests** — Formalized test infrastructure (conftest, helpers, smoke suite)~~ **DONE**

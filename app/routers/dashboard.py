@@ -10,6 +10,9 @@ from app.models.database import get_db
 from app.models import User, Organization, Account, JournalEntry, JournalLine, Goal, Loan, Budget, AIInsight, AIReport
 from app.services.health_score_service import HealthScoreService
 from app.services.ai_orchestrator import AIOrchestrator
+from app.services.bill_subscription_service import CommitmentService
+from app.schemas.bill_subscription import CommitmentSummary
+from app.core.security import get_db_with_tenant_context, require_tenant_member
 from app.config import get_settings
 
 settings = get_settings()
@@ -91,3 +94,14 @@ async def dashboard_summary(request: Request, db: AsyncSession = Depends(get_db)
         "total_liabilities": total_liabilities,
         "net_worth": net_worth,
     }
+
+
+@router.get("/api/commitments", response_model=CommitmentSummary)
+async def dashboard_commitments(
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Return upcoming bills, overdue bills, and subscription renewal summary."""
+    service = CommitmentService(db, tenant_id=user.organization_id)
+    summary = await service.summary()
+    return CommitmentSummary(**summary)
