@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional
 
-from app.models.database import get_db
+from app.core.security import get_db_with_tenant_context
 from app.models import AIInsight, AIReport, AIChatSession, AIChatMessage
 from app.schemas.ai import ChatRequest, ChatResponse, WhatIfRequest, WhatIfResponse
 from app.services.ai_orchestrator import AIOrchestrator
@@ -19,12 +19,15 @@ templates = Jinja2Templates(directory="app/templates")
 
 
 @router.get("/chat", response_class=HTMLResponse)
-async def chat_page(request: Request, db: AsyncSession = Depends(get_db)):
+async def chat_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+):
     """AI chat interface page."""
     tenant_id = getattr(request.state, "tenant_id", None)
     if not tenant_id:
         return templates.TemplateResponse("auth/login.html", {"request": request})
-    
+
     # Get chat sessions
     result = await db.execute(
         select(AIChatSession)
@@ -33,7 +36,7 @@ async def chat_page(request: Request, db: AsyncSession = Depends(get_db)):
         .limit(10)
     )
     sessions = result.scalars().all()
-    
+
     return templates.TemplateResponse("ai/chat.html", {
         "request": request,
         "sessions": sessions,
@@ -43,28 +46,32 @@ async def chat_page(request: Request, db: AsyncSession = Depends(get_db)):
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_ai(
     chat_request: ChatRequest,
-    db: AsyncSession = Depends(get_db)
+    request: Request,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
 ):
     """Chat with the AI Financial Coach."""
     tenant_id = getattr(request.state, "tenant_id", None)
     user_id = getattr(request.state, "user_id", None)
-    
+
     if not tenant_id:
         raise HTTPException(status_code=403, detail="Not authenticated")
-    
+
     chat_service = AIChatService(db, tenant_id, user_id)
     response = await chat_service.chat(chat_request.message, chat_request.session_id)
-    
+
     return response
 
 
 @router.get("/insights", response_class=HTMLResponse)
-async def insights_page(request: Request, db: AsyncSession = Depends(get_db)):
+async def insights_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+):
     """AI insights page."""
     tenant_id = getattr(request.state, "tenant_id", None)
     if not tenant_id:
         return templates.TemplateResponse("auth/login.html", {"request": request})
-    
+
     result = await db.execute(
         select(AIInsight)
         .where(AIInsight.tenant_id == tenant_id)
@@ -72,7 +79,7 @@ async def insights_page(request: Request, db: AsyncSession = Depends(get_db)):
         .order_by(AIInsight.priority.desc(), AIInsight.created_at.desc())
     )
     insights = result.scalars().all()
-    
+
     return templates.TemplateResponse("ai/insights.html", {
         "request": request,
         "insights": insights,
@@ -82,26 +89,30 @@ async def insights_page(request: Request, db: AsyncSession = Depends(get_db)):
 @router.post("/what-if", response_model=WhatIfResponse)
 async def what_if_scenario(
     request: WhatIfRequest,
-    db: AsyncSession = Depends(get_db)
+    request_obj: Request,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
 ):
     """Run a what-if scenario."""
-    tenant_id = getattr(request.state, "tenant_id", None)
+    tenant_id = getattr(request_obj.state, "tenant_id", None)
     if not tenant_id:
         raise HTTPException(status_code=403, detail="Not authenticated")
-    
+
     forecast_service = AIForecastService(db, tenant_id)
     result = await forecast_service.simulate_scenario(request.scenario)
-    
+
     return result
 
 
 @router.get("/reports/daily")
-async def get_daily_report(db: AsyncSession = Depends(get_db)):
+async def get_daily_report(
+    request: Request,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+):
     """Get the latest daily AI report."""
     tenant_id = getattr(request.state, "tenant_id", None)
     if not tenant_id:
         raise HTTPException(status_code=403, detail="Not authenticated")
-    
+
     result = await db.execute(
         select(AIReport)
         .where(AIReport.tenant_id == tenant_id)
@@ -110,10 +121,10 @@ async def get_daily_report(db: AsyncSession = Depends(get_db)):
         .limit(1)
     )
     report = result.scalar_one_or_none()
-    
+
     if not report:
         # Generate on demand
         orchestrator = AIOrchestrator(db, tenant_id)
-        report = await orchestrator.generate_daily_report()
-    
+        report = await orchestrator.generate_daily_brief()
+
     return report

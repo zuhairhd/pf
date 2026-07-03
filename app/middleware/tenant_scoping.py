@@ -31,9 +31,9 @@ class TenantScopingMiddleware(BaseHTTPMiddleware):
             except Exception:
                 pass
         
-        # Set tenant_id and user_id in request state
-        request.state.tenant_id = tenant_id
-        request.state.user_id = user_id
+        # Set tenant_id and user_id in request state as integers
+        request.state.tenant_id = int(tenant_id) if tenant_id is not None else None
+        request.state.user_id = int(user_id) if user_id is not None else None
         
         response = await call_next(request)
         return response

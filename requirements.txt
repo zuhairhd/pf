@@ -31,3 +31,4 @@ pytesseract
 weasyprint
 stripe
 python-dateutil
+openai>=1.0.0

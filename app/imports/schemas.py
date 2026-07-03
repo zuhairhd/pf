@@ -34,6 +34,17 @@ class CSVUploadRequest(BaseModel):
     currency: str = Field(default="OMR", max_length=3)
 
 
+class SMSParseRequest(BaseModel):
+    """Request body for parsing one or more pasted SMS bank messages."""
+
+    original_filename: str = Field(
+        default="sms_import.txt",
+        min_length=1,
+        max_length=255,
+    )
+    sms_text: str = Field(..., min_length=1)
+
+
 class ParsedRow(BaseModel):
     """A single parsed row returned in previews."""
 

@@ -21,6 +21,7 @@ from app.imports.schemas import (
     ImportRowFilter,
     ParsedRow,
     ImportJobSummary,
+    SMSParseRequest,
 )
 from app.imports.services import ImportService, ImportServiceError
 from app.models import User
@@ -79,6 +80,31 @@ async def upload_csv(
             original_filename=payload.original_filename,
             file_content=payload.file_content,
             mapping_hint=payload.mapping,
+        )
+    except ImportServiceError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+
+    rows = await service.get_job_rows(job.id, limit=1000)
+    return ImportPreviewResponse(
+        job_id=job.id,
+        summary=_to_summary(job),
+        rows=[_to_parsed_row(r) for r in rows],
+    )
+
+
+@router.post("/sms/parse", response_model=ImportPreviewResponse)
+async def parse_sms(
+    payload: SMSParseRequest,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Parse pasted SMS bank alerts and return a preview import job."""
+    service = ImportService(db, tenant_id=user.organization_id)
+    try:
+        job = await service.create_sms_job(
+            user=user,
+            original_filename=payload.original_filename,
+            sms_text=payload.sms_text,
         )
     except ImportServiceError as exc:
         raise HTTPException(status_code=400, detail=exc.message) from exc

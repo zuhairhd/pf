@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.imports.models import ImportJob, ImportedRow
 from app.imports.parsers.csv_parser import CSVParser, compute_file_hash
+from app.imports.parsers.sms_parser import compute_sms_hash, parse_sms_messages
 from app.imports.schemas import ColumnMapping, ImportConfirmRequest
 from app.models import Account, JournalEntry, JournalLine, User
 from app.schemas.accounting import JournalEntryCreate, JournalLineCreate
@@ -91,6 +92,90 @@ class ImportService:
                 parsed_data=parsed_row.parsed_data,
                 validation_errors=parsed_row.validation_errors,
                 duplicate_key=parsed_row.duplicate_key if parsed_row.duplicate_key else None,
+                duplicate_of_row_id=None,
+                status=status,
+            )
+            self.db.add(row_record)
+            imported_rows.append(row_record)
+
+        await self.db.flush()
+
+        # Update duplicate_of references now that IDs are known.
+        key_to_id: dict[str, int] = {}
+        for row_record in imported_rows:
+            if row_record.status == "valid" and row_record.duplicate_key:
+                key_to_id[row_record.duplicate_key] = row_record.id
+
+        duplicate_count = 0
+        for row_record in imported_rows:
+            if row_record.status == "duplicate" and row_record.duplicate_key:
+                row_record.duplicate_of_row_id = key_to_id.get(row_record.duplicate_key)
+                duplicate_count += 1
+
+        job.duplicate_rows = duplicate_count
+        job.valid_rows = sum(1 for r in imported_rows if r.status == "valid")
+
+        await self.db.commit()
+        await self.db.refresh(job)
+        return job
+
+    async def create_sms_job(
+        self,
+        *,
+        user: User,
+        original_filename: str,
+        sms_text: str,
+    ) -> ImportJob:
+        """Parse pasted SMS messages and create an import job with imported rows."""
+        parsed_messages = parse_sms_messages(sms_text)
+        file_hash = compute_sms_hash(sms_text)
+
+        valid_count = sum(1 for m in parsed_messages if not m.validation_errors)
+        invalid_count = len(parsed_messages) - valid_count
+
+        job = ImportJob(
+            tenant_id=self.tenant_id,
+            user_id=user.id,
+            import_type="sms",
+            status="preview",
+            original_filename=original_filename,
+            file_hash=file_hash,
+            mapping={},
+            total_rows=len(parsed_messages),
+            valid_rows=valid_count,
+            invalid_rows=invalid_count,
+            duplicate_rows=0,
+            imported_rows=0,
+            errors=[],
+        )
+        self.db.add(job)
+        await self.db.flush()
+        await self.db.refresh(job)
+
+        # Build imported row records and detect duplicates within the pasted text.
+        duplicate_keys: dict[str, int] = {}
+        imported_rows: list[ImportedRow] = []
+
+        for row_number, parsed_sms in enumerate(parsed_messages, start=1):
+            status = "valid" if not parsed_sms.validation_errors else "invalid"
+            duplicate_of: Optional[int] = None
+            duplicate_key = parsed_sms.compute_duplicate_key()
+
+            if status == "valid" and duplicate_key:
+                if duplicate_key in duplicate_keys:
+                    status = "duplicate"
+                    duplicate_of = duplicate_keys[duplicate_key]
+                else:
+                    duplicate_keys[duplicate_key] = 0  # placeholder
+
+            row_record = ImportedRow(
+                tenant_id=self.tenant_id,
+                import_job_id=job.id,
+                row_number=row_number,
+                raw_data={"message": parsed_sms.raw_message},
+                parsed_data=parsed_sms.to_dict(),
+                validation_errors=parsed_sms.validation_errors,
+                duplicate_key=duplicate_key,
                 duplicate_of_row_id=None,
                 status=status,
             )

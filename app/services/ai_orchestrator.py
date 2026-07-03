@@ -4,6 +4,13 @@ from datetime import datetime, date, timedelta
 from decimal import Decimal
 from typing import List, Dict, Optional
 
+import json
+import re
+
+from app.ai_cfo.llm.client import LLMClient, LLMError
+from app.ai_cfo.llm.cost_control import CostController
+from app.ai_cfo.llm.prompts import daily_brief_prompt, insight_prompt
+from app.ai_cfo.llm.safety import SafetyFilter
 from app.models import (
     Account, JournalEntry, JournalLine, Budget, Goal, Loan,
     Subscription, Bill, Organization
@@ -22,15 +29,15 @@ class AIOrchestrator:
         """Generate the daily AI brief for the tenant."""
         # Gather financial data
         financial_data = await self._gather_financial_data()
-        
-        # Generate insights
-        insights = await self._generate_insights(financial_data)
-        
+
         # Calculate health score
         from app.services.health_score_service import HealthScoreService
         health_service = HealthScoreService(self.db, self.tenant_id)
         health_score = await health_service.calculate_score()
-        
+
+        # Generate content (LLM-augmented with fallback)
+        content = await self._generate_daily_brief_content(financial_data, health_score)
+
         # Create report
         report = AIReport(
             tenant_id=self.tenant_id,
@@ -38,8 +45,8 @@ class AIOrchestrator:
             period_start=date.today(),
             period_end=date.today(),
             title=f"Daily Brief - {date.today().strftime('%B %d, %Y')}",
-            content=self._format_daily_brief(insights, health_score),
-            summary=insights[0]['message'] if insights else "No significant changes today.",
+            content=content,
+            summary=health_score['insights'][0]['message'] if health_score.get('insights') else "No significant changes today.",
             health_score=health_score['overall_score'],
             metrics_json=str(health_score['dimensions']),
         )
@@ -47,6 +54,36 @@ class AIOrchestrator:
         await self.db.commit()
         await self.db.refresh(report)
         return report
+
+    async def _generate_daily_brief_content(
+        self, financial_data: dict, health_score: dict
+    ) -> str:
+        """Generate daily brief content using LLM with rule-based fallback."""
+        cost_controller = CostController(self.db, self.tenant_id)
+        allowed, _, _ = await cost_controller.check_limit()
+        client = LLMClient()
+
+        if allowed and client.is_configured():
+            try:
+                response = await client.complete(
+                    messages=daily_brief_prompt(financial_data, health_score),
+                    temperature=0.7,
+                    max_tokens=800,
+                )
+                await cost_controller.record_usage(
+                    model=response.model,
+                    prompt_tokens=response.prompt_tokens,
+                    completion_tokens=response.completion_tokens,
+                    total_tokens=response.total_tokens,
+                    cost_usd=response.cost_usd,
+                    request_type="report",
+                )
+                safety = SafetyFilter()
+                return safety.sanitize(response.content)
+            except LLMError:
+                pass
+
+        return self._format_daily_brief([], health_score)
     
     async def generate_insights(self) -> List[AIInsight]:
         """Generate AI insights for the tenant."""
@@ -121,9 +158,94 @@ class AIOrchestrator:
         }
     
     async def _generate_insights(self, data: Dict) -> List[Dict]:
-        """Generate insights from financial data (rule-based for now)."""
+        """Generate insights from financial data, LLM-augmented with rule-based fallback."""
+        cost_controller = CostController(self.db, self.tenant_id)
+        allowed, _, _ = await cost_controller.check_limit()
+        client = LLMClient()
+
+        if allowed and client.is_configured():
+            try:
+                response = await client.complete(
+                    messages=insight_prompt(data),
+                    temperature=0.6,
+                    max_tokens=1000,
+                )
+                llm_insights = self._parse_llm_insights(response.content)
+                if llm_insights:
+                    await cost_controller.record_usage(
+                        model=response.model,
+                        prompt_tokens=response.prompt_tokens,
+                        completion_tokens=response.completion_tokens,
+                        total_tokens=response.total_tokens,
+                        cost_usd=response.cost_usd,
+                        request_type="insight",
+                    )
+                    return llm_insights
+            except LLMError:
+                pass
+
+        return self._rule_based_insights(data)
+
+    def _parse_llm_insights(self, content: str) -> List[Dict]:
+        """Parse JSON insight list from LLM output."""
+        # Some models wrap JSON in markdown code fences.
+        match = re.search(r"```(?:json)?\s*(\[.*\])\s*```", content, re.DOTALL)
+        if match:
+            content = match.group(1)
+
+        try:
+            raw_insights = json.loads(content)
+        except json.JSONDecodeError:
+            return []
+
         insights = []
-        
+        for item in raw_insights:
+            if not isinstance(item, dict):
+                continue
+            insight_type = item.get("type", "general").lower()
+            priority = item.get("priority", "medium").lower()
+            insights.append({
+                "type": self._map_insight_type(insight_type),
+                "priority": self._map_insight_priority(priority),
+                "title": item.get("title", "Insight"),
+                "message": item.get("message", ""),
+                "confidence": min(100, max(0, int(item.get("confidence", 80)))),
+                "featured": False,
+            })
+        return insights
+
+    def _map_insight_type(self, value: str) -> AIInsightType:
+        """Map a string type to the AIInsightType enum."""
+        mapping = {
+            "cash_flow": AIInsightType.CASH_FLOW,
+            "expense": AIInsightType.EXPENSE,
+            "income": AIInsightType.INCOME,
+            "debt": AIInsightType.DEBT,
+            "budget": AIInsightType.BUDGET,
+            "savings": AIInsightType.SAVINGS,
+            "emergency_fund": AIInsightType.EMERGENCY_FUND,
+            "investment": AIInsightType.INVESTMENT,
+            "retirement": AIInsightType.RETIREMENT,
+            "goal": AIInsightType.GOAL,
+            "risk": AIInsightType.RISK,
+            "subscription": AIInsightType.SUBSCRIPTION,
+        }
+        return mapping.get(value, AIInsightType.GENERAL)
+
+    def _map_insight_priority(self, value: str) -> AIInsightPriority:
+        """Map a string priority to the AIInsightPriority enum."""
+        mapping = {
+            "critical": AIInsightPriority.CRITICAL,
+            "high": AIInsightPriority.HIGH,
+            "medium": AIInsightPriority.MEDIUM,
+            "low": AIInsightPriority.LOW,
+        }
+        return mapping.get(value, AIInsightPriority.MEDIUM)
+
+    def _rule_based_insights(self, data: Dict) -> List[Dict]:
+        """Generate rule-based insights when LLM is unavailable."""
+        insights = []
+
         # Cash flow insight
         if data['net_worth'] < 0:
             insights.append({
@@ -134,7 +256,7 @@ class AIOrchestrator:
                 'confidence': 95,
                 'featured': True,
             })
-        
+
         # Budget insights
         for budget in data['budgets']:
             if budget.total_actual > budget.total_budgeted:
@@ -145,7 +267,7 @@ class AIOrchestrator:
                     'message': f"You've exceeded your {budget.name} budget by {float(budget.total_actual - budget.total_budgeted):.2f}.",
                     'confidence': 100,
                 })
-        
+
         # Goal insights
         for goal in data['goals']:
             progress = float(goal.current_amount) / float(goal.target_amount) * 100 if goal.target_amount > 0 else 0
@@ -157,7 +279,7 @@ class AIOrchestrator:
                     'message': f"Your {goal.name} goal is only {progress:.1f}% complete with the deadline approaching.",
                     'confidence': 85,
                 })
-        
+
         # Loan insights
         total_debt = sum(float(l.current_balance) for l in data['loans'])
         if total_debt > 0:
@@ -170,7 +292,7 @@ class AIOrchestrator:
                     'message': f"Your {highest_rate_loan.name} has a high interest rate ({float(highest_rate_loan.interest_rate)*100:.1f}%). Consider prioritizing repayment.",
                     'confidence': 90,
                 })
-        
+
         # If no insights, add a positive one
         if not insights:
             insights.append({
@@ -180,7 +302,7 @@ class AIOrchestrator:
                 'message': "Your finances appear to be on track. Keep up the good work!",
                 'confidence': 70,
             })
-        
+
         return insights
     
     def _format_daily_brief(self, insights: List[Dict], health_score: Dict) -> str:

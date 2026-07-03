@@ -4,6 +4,10 @@ from datetime import datetime, date, timedelta
 from decimal import Decimal
 from typing import Dict, List, Optional
 
+from app.ai_cfo.llm.client import LLMClient, LLMError
+from app.ai_cfo.llm.cost_control import CostController
+from app.ai_cfo.llm.prompts import what_if_prompt
+from app.ai_cfo.llm.safety import SafetyFilter
 from app.models import Account, JournalEntry, JournalLine, Goal, Loan
 from app.schemas.ai import WhatIfRequest, WhatIfResponse
 
@@ -16,19 +20,62 @@ class AIForecastService:
         self.tenant_id = tenant_id
     
     async def simulate_scenario(self, scenario: str) -> WhatIfResponse:
-        """Run a what-if scenario simulation."""
-        scenario_lower = scenario.lower()
-        
-        if "save" in scenario_lower or "saving" in scenario_lower:
-            return await self._simulate_savings_increase(scenario)
-        elif "car" in scenario_lower or "house" in scenario_lower or "purchase" in scenario_lower:
-            return await self._simulate_major_purchase(scenario)
-        elif "salary" in scenario_lower or "income" in scenario_lower:
-            return await self._simulate_income_change(scenario)
-        elif "debt" in scenario_lower or "pay off" in scenario_lower:
-            return await self._simulate_debt_payoff(scenario)
-        else:
+        """Run a what-if scenario simulation, LLM-augmented with rule-based fallback."""
+        safety = SafetyFilter()
+        input_check = safety.check_input(scenario)
+        if not input_check["allowed"]:
             return WhatIfResponse(
+                scenario=scenario,
+                impact_summary=input_check["warning"],
+                recommendations=[],
+                confidence=100,
+            )
+
+        cost_controller = CostController(self.db, self.tenant_id)
+        allowed, _, _ = await cost_controller.check_limit()
+        client = LLMClient()
+
+        if allowed and client.is_configured():
+            try:
+                financial_data = await self._gather_financial_data()
+                response = await client.complete(
+                    messages=what_if_prompt(scenario, financial_data),
+                    temperature=0.7,
+                    max_tokens=900,
+                )
+                await cost_controller.record_usage(
+                    model=response.model,
+                    prompt_tokens=response.prompt_tokens,
+                    completion_tokens=response.completion_tokens,
+                    total_tokens=response.total_tokens,
+                    cost_usd=response.cost_usd,
+                    request_type="forecast",
+                )
+                return WhatIfResponse(
+                    scenario=scenario,
+                    impact_summary=safety.sanitize(response.content),
+                    confidence=80,
+                )
+            except LLMError:
+                pass
+
+        return await self._rule_based_scenario(scenario)
+
+    async def _rule_based_scenario(self, scenario: str) -> WhatIfResponse:
+        """Run a rule-based scenario simulation when LLM is unavailable."""
+        scenario_lower = scenario.lower()
+        safety = SafetyFilter()
+
+        if "save" in scenario_lower or "saving" in scenario_lower:
+            result = await self._simulate_savings_increase(scenario)
+        elif "car" in scenario_lower or "house" in scenario_lower or "purchase" in scenario_lower:
+            result = await self._simulate_major_purchase(scenario)
+        elif "salary" in scenario_lower or "income" in scenario_lower:
+            result = await self._simulate_income_change(scenario)
+        elif "debt" in scenario_lower or "pay off" in scenario_lower:
+            result = await self._simulate_debt_payoff(scenario)
+        else:
+            result = WhatIfResponse(
                 scenario=scenario,
                 impact_summary="I can help you analyze various financial scenarios. Try asking about: increasing savings, making a major purchase, changing your income, or paying off debt.",
                 recommendations=[
@@ -37,6 +84,9 @@ class AIForecastService:
                 ],
                 confidence=60,
             )
+
+        result.impact_summary = safety.add_disclaimer(result.impact_summary)
+        return result
     
     async def _simulate_savings_increase(self, scenario: str) -> WhatIfResponse:
         """Simulate impact of increasing monthly savings."""
@@ -186,6 +236,23 @@ class AIForecastService:
             confidence=85,
         )
     
+    async def _gather_financial_data(self) -> Dict:
+        """Gather basic financial data for what-if prompts."""
+        result = await self.db.execute(
+            select(Account).where(Account.tenant_id == self.tenant_id).where(Account.is_active == True)
+        )
+        accounts = result.scalars().all()
+
+        total_assets = sum(float(a.current_balance) for a in accounts if a.account_type == 'Asset')
+        total_liabilities = sum(float(a.current_balance) for a in accounts if a.account_type == 'Liability')
+
+        return {
+            'accounts': accounts,
+            'total_assets': total_assets,
+            'total_liabilities': total_liabilities,
+            'net_worth': total_assets - total_liabilities,
+        }
+
     async def forecast_cash_flow(self, months: int = 12) -> Dict:
         """Forecast cash flow for the next N months."""
         # Get historical monthly income and expenses
