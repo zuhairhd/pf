@@ -54,6 +54,17 @@ async def _journal_lines(db, tenant_context, tenant_id, journal_entry_id):
     return list(result.scalars().all())
 
 
+async def _journal_entry(db, tenant_context, tenant_id, journal_entry_id):
+    await tenant_context(tenant_id)
+    result = await db.execute(
+        select(JournalEntry).where(
+            JournalEntry.tenant_id == tenant_id,
+            JournalEntry.id == journal_entry_id,
+        )
+    )
+    return result.scalar_one()
+
+
 @pytest.fixture
 def bill_payload():
     return {
@@ -241,6 +252,83 @@ async def test_mark_bill_paid_twice_does_not_duplicate_journal_entry(
 
 @pytest.mark.integration
 @pytest.mark.anyio
+async def test_accounting_reversal_endpoint_is_balanced_and_idempotent(
+    client, auth_headers, bill_payload, unique, db, tenant_context, test_user
+):
+    """The accounting API creates one balanced reversal with swapped lines."""
+    payment, expense = await _create_payment_accounts(client, auth_headers, unique)
+    create_response = await client.post(
+        "/bills",
+        json={
+            **bill_payload,
+            "payment_account_id": payment["id"],
+            "expense_account_id": expense["id"],
+        },
+        headers=auth_headers,
+    )
+    bill_id = create_response.json()["id"]
+    paid_response = await client.post(f"/bills/{bill_id}/mark-paid", headers=auth_headers)
+    original_id = paid_response.json()["journal_entry_id"]
+
+    response = await client.post(
+        f"/accounts/journal-entries/{original_id}/reverse",
+        json={"reason": "Correction", "reversal_date": date.today().isoformat()},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["original_journal_entry_id"] == original_id
+    assert data["reversal_journal_entry_id"] != original_id
+    assert data["reversed"] is True
+    assert Decimal(data["amount"]) == Decimal(bill_payload["typical_amount"])
+
+    lines = await _journal_lines(
+        db, tenant_context, test_user.organization_id, data["reversal_journal_entry_id"]
+    )
+    assert len(lines) == 2
+    assert sum((line.debit for line in lines), Decimal("0")) == sum(
+        (line.credit for line in lines), Decimal("0")
+    )
+    debit_line = next(line for line in lines if line.debit > 0)
+    credit_line = next(line for line in lines if line.credit > 0)
+    assert debit_line.account_id == payment["id"]
+    assert credit_line.account_id == expense["id"]
+
+    reversal = await _journal_entry(
+        db, tenant_context, test_user.organization_id, data["reversal_journal_entry_id"]
+    )
+    assert reversal.reference == f"REV-{test_user.organization_id}-{original_id}"
+    assert reversal.source == "reversal"
+    assert reversal.reversed_entry_id == original_id
+
+    repeat = await client.post(
+        f"/accounts/journal-entries/{original_id}/reverse",
+        json={"reason": "Duplicate click"},
+        headers=auth_headers,
+    )
+    assert repeat.status_code == 200, repeat.text
+    assert repeat.json()["reversal_journal_entry_id"] == data["reversal_journal_entry_id"]
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_accounting_reversal_endpoint_rejects_invalid_and_unauthenticated_requests(
+    client, auth_headers
+):
+    """Journal reversal requires auth and handles unknown journal IDs safely."""
+    unauthenticated = await client.post("/accounts/journal-entries/999999999/reverse")
+    assert unauthenticated.status_code in (401, 403)
+
+    response = await client.post(
+        "/accounts/journal-entries/999999999/reverse",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+    assert "Journal entry not found" in response.text
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
 async def test_mark_bill_paid_requires_accounts(client, auth_headers, bill_payload):
     """Mark-paid fails clearly when no payment accounts are supplied."""
     create_response = await client.post("/bills", json=bill_payload, headers=auth_headers)
@@ -253,10 +341,10 @@ async def test_mark_bill_paid_requires_accounts(client, auth_headers, bill_paylo
 
 @pytest.mark.integration
 @pytest.mark.anyio
-async def test_mark_bill_unpaid_blocks_posted_journal_entry(
-    client, auth_headers, bill_payload, unique
+async def test_mark_bill_unpaid_reverses_posted_journal_entry(
+    client, auth_headers, bill_payload, unique, db, tenant_context, test_user
 ):
-    """Mark-unpaid does not delete or undo a posted journal entry."""
+    """Mark-unpaid creates one reversing entry and leaves the original intact."""
     payment, expense = await _create_payment_accounts(client, auth_headers, unique)
     create_response = await client.post(
         "/bills",
@@ -270,14 +358,40 @@ async def test_mark_bill_unpaid_blocks_posted_journal_entry(
     bill_id = create_response.json()["id"]
     paid_response = await client.post(f"/bills/{bill_id}/mark-paid", headers=auth_headers)
     journal_entry_id = paid_response.json()["journal_entry_id"]
+    original_lines = await _journal_lines(
+        db, tenant_context, test_user.organization_id, journal_entry_id
+    )
 
     response = await client.post(f"/bills/{bill_id}/mark-unpaid", headers=auth_headers)
-    assert response.status_code == 400
-    assert "payment journal entry" in response.text
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["is_paid"] is False
+    assert data["status"] == "upcoming"
+    assert data["journal_entry_id"] == journal_entry_id
+    assert data["reversal_journal_entry_id"] is not None
 
-    get_response = await client.get(f"/bills/{bill_id}", headers=auth_headers)
-    assert get_response.json()["is_paid"] is True
-    assert get_response.json()["journal_entry_id"] == journal_entry_id
+    reversal_lines = await _journal_lines(
+        db, tenant_context, test_user.organization_id, data["reversal_journal_entry_id"]
+    )
+    assert len(reversal_lines) == 2
+    original_debit = next(line for line in original_lines if line.debit > 0)
+    original_credit = next(line for line in original_lines if line.credit > 0)
+    reversal_debit = next(line for line in reversal_lines if line.debit > 0)
+    reversal_credit = next(line for line in reversal_lines if line.credit > 0)
+    assert reversal_debit.account_id == original_credit.account_id
+    assert reversal_debit.debit == original_credit.credit
+    assert reversal_credit.account_id == original_debit.account_id
+    assert reversal_credit.credit == original_debit.debit
+
+    original_entry = await _journal_entry(
+        db, tenant_context, test_user.organization_id, journal_entry_id
+    )
+    assert original_entry.reversal_entry_id == data["reversal_journal_entry_id"]
+    assert original_entry.reference == f"BILL-{test_user.organization_id}-{bill_id}"
+
+    repeat = await client.post(f"/bills/{bill_id}/mark-unpaid", headers=auth_headers)
+    assert repeat.status_code == 200, repeat.text
+    assert repeat.json()["reversal_journal_entry_id"] == data["reversal_journal_entry_id"]
 
 
 @pytest.mark.integration
@@ -444,10 +558,10 @@ async def test_mark_subscription_paid_twice_is_idempotent(
 
 @pytest.mark.integration
 @pytest.mark.anyio
-async def test_mark_subscription_unpaid_blocks_posted_journal_entry(
-    client, auth_headers, subscription_payload, unique
+async def test_reverse_subscription_payment_creates_reversal_journal_entry(
+    client, auth_headers, subscription_payload, unique, db, tenant_context, test_user
 ):
-    """Subscription mark-unpaid is blocked after a payment journal entry exists."""
+    """Subscription payment reversal posts one balanced reversing entry."""
     payment, expense = await _create_payment_accounts(client, auth_headers, unique)
     create_response = await client.post(
         "/subscriptions",
@@ -459,16 +573,40 @@ async def test_mark_subscription_unpaid_blocks_posted_journal_entry(
         headers=auth_headers,
     )
     subscription_id = create_response.json()["id"]
+    original_next_billing_date = create_response.json()["next_billing_date"]
     paid_response = await client.post(
         f"/subscriptions/{subscription_id}/mark-paid", headers=auth_headers
     )
     assert paid_response.status_code == 200, paid_response.text
+    journal_entry_id = paid_response.json()["journal_entry_id"]
+    advanced_next_billing_date = paid_response.json()["next_billing_date"]
 
     response = await client.post(
+        f"/subscriptions/{subscription_id}/reverse-payment", headers=auth_headers
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["journal_entry_id"] == journal_entry_id
+    assert data["reversal_journal_entry_id"] is not None
+    assert data["next_billing_date"] == original_next_billing_date
+
+    reversal_lines = await _journal_lines(
+        db, tenant_context, test_user.organization_id, data["reversal_journal_entry_id"]
+    )
+    assert sum((line.debit for line in reversal_lines), Decimal("0")) == Decimal("15.000")
+    assert sum((line.credit for line in reversal_lines), Decimal("0")) == Decimal("15.000")
+    reversal_debit = next(line for line in reversal_lines if line.debit > 0)
+    reversal_credit = next(line for line in reversal_lines if line.credit > 0)
+    assert reversal_debit.account_id == payment["id"]
+    assert reversal_credit.account_id == expense["id"]
+
+    repeat = await client.post(
         f"/subscriptions/{subscription_id}/mark-unpaid", headers=auth_headers
     )
-    assert response.status_code == 400
-    assert "payment journal entry" in response.text
+    assert repeat.status_code == 200, repeat.text
+    assert repeat.json()["reversal_journal_entry_id"] == data["reversal_journal_entry_id"]
+    assert repeat.json()["next_billing_date"] == original_next_billing_date
+    assert repeat.json()["next_billing_date"] != advanced_next_billing_date
 
 
 @pytest.mark.integration
@@ -785,6 +923,62 @@ async def test_tenant_a_cannot_pay_tenant_b_bill_or_subscription(
 
 @pytest.mark.integration
 @pytest.mark.anyio
+async def test_tenant_a_cannot_reverse_tenant_b_bill_or_subscription_payment(
+    client, db, unique, bill_payload, subscription_payload
+):
+    """Reversal routes do not expose or reverse another tenant's payments."""
+    org_a = await create_test_organization(db, name=unique("Org A"), slug=unique("org-a"))
+    org_b = await create_test_organization(db, name=unique("Org B"), slug=unique("org-b"))
+    user_a, password_a = await create_test_user(db, org_a)
+    user_b, password_b = await create_test_user(db, org_b)
+    headers_a = await auth_headers_for(client, user_a.email, password_a)
+    headers_b = await auth_headers_for(client, user_b.email, password_b)
+    payment_b, expense_b = await _create_payment_accounts(client, headers_b, unique)
+
+    bill_b = await client.post(
+        "/bills",
+        json={
+            **bill_payload,
+            "payment_account_id": payment_b["id"],
+            "expense_account_id": expense_b["id"],
+        },
+        headers=headers_b,
+    )
+    sub_b = await client.post(
+        "/subscriptions",
+        json={
+            **subscription_payload,
+            "payment_account_id": payment_b["id"],
+            "expense_account_id": expense_b["id"],
+        },
+        headers=headers_b,
+    )
+    paid_bill = await client.post(
+        f"/bills/{bill_b.json()['id']}/mark-paid", headers=headers_b
+    )
+    paid_sub = await client.post(
+        f"/subscriptions/{sub_b.json()['id']}/mark-paid", headers=headers_b
+    )
+
+    bill_response = await client.post(
+        f"/bills/{bill_b.json()['id']}/mark-unpaid", headers=headers_a
+    )
+    sub_response = await client.post(
+        f"/subscriptions/{sub_b.json()['id']}/reverse-payment", headers=headers_a
+    )
+    direct_response = await client.post(
+        f"/accounts/journal-entries/{paid_bill.json()['journal_entry_id']}/reverse",
+        headers=headers_a,
+    )
+
+    assert bill_response.status_code == 404
+    assert sub_response.status_code == 404
+    assert direct_response.status_code == 404
+    assert paid_sub.json()["journal_entry_id"] is not None
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
 async def test_bills_require_auth(client, bill_payload):
     """Anonymous users cannot create or list bills."""
     create_response = await client.post("/bills", json=bill_payload)
@@ -808,9 +1002,11 @@ async def test_subscriptions_require_auth(client, subscription_payload):
 @pytest.mark.integration
 @pytest.mark.anyio
 async def test_rls_active_on_bills_and_subscriptions(db):
-    """Both tables must have RLS and FORCE RLS enabled."""
+    """Commitment and accounting tables must have RLS and FORCE RLS enabled."""
     await assert_rls_enabled(db, "bills")
     await assert_rls_enabled(db, "subscriptions")
+    await assert_rls_enabled(db, "journal_entries")
+    await assert_rls_enabled(db, "journal_lines")
 
 
 # ---------------------------------------------------------------------------

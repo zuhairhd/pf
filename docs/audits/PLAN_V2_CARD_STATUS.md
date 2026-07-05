@@ -85,8 +85,9 @@
 | IMP-701 | Excel Import | **Missing** |
 | IMP-702 | SMS Bank Alert Parser | **Done** (`app/imports/parsers/sms_parser.py`, `/imports/sms/parse`, tests) |
 | IMP-703 | Import UI Refinements | **Missing** |
-| BILL-800 to BILL-801A | Bills | **Done** (`app/routers/bills.py`, CRUD, mark-paid payment posting through `AccountingService`, upcoming/overdue, dashboard summary, tests) |
-| SUB-900 to SUB-901 | Subscriptions | **Done** (`app/routers/subscriptions.py`, CRUD, mark-paid payment posting through `AccountingService`, pause/cancel/activate, renewals, equivalent amounts, tests) |
+| BILL-800 to BILL-801A | Bills | **Done** (`app/routers/bills.py`, CRUD, mark-paid payment posting through `AccountingService`, mark-unpaid reversal support, upcoming/overdue, dashboard summary, tests) |
+| SUB-900 to SUB-901 | Subscriptions | **Done** (`app/routers/subscriptions.py`, CRUD, mark-paid payment posting through `AccountingService`, payment reversal support, pause/cancel/activate, renewals, equivalent amounts, tests) |
+| ACC-503A | Journal Entry Reversal Support | **Done** (`AccountingService.reverse_journal_entry`, reversal metadata, bill/subscription reversal integration, tests) |
 | BDG-1000 to BDG-1003 | Budgets | Partial (models, routes, service exist) |
 | DB-1100 to DB-1105 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI; Partial for remaining dashboard widgets |
 | AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client; Partial for remaining AI engines (health score, chat, what-if, orchestrator exist but not all wired to LLM) |
@@ -136,7 +137,7 @@
 
 ## Latest Completed Card
 
-**BILL-801A - Bill and Subscription Payment Posting Through Accounting Engine** is complete. Mark-paid now posts balanced journal entries through `AccountingService`, prevents duplicate posting, validates tenant-owned Asset/Expense accounts, and blocks mark-unpaid after posting until `ACC-503A - Journal Entry Reversal Support` is implemented.
+**ACC-503A - Journal Entry Reversal Support** is complete. Posted journal entries are never deleted for undo flows; reversals now create balanced reversing entries through `AccountingService`, prevent duplicate reversals, and allow bill/subscription payment reversal while preserving tenant isolation.
 
 ---
 

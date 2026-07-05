@@ -36,6 +36,27 @@ class JournalEntryCreate(BaseModel):
     reference: Optional[str] = Field(default=None, min_length=1, max_length=50)
 
 
+class JournalEntryReverseRequest(BaseModel):
+    reversal_date: Optional[date] = None
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
+class JournalEntryReverseLine(BaseModel):
+    account_id: int
+    debit: Decimal
+    credit: Decimal
+
+
+class JournalEntryReverseResponse(BaseModel):
+    original_journal_entry_id: int
+    reversal_journal_entry_id: int
+    reversed: bool
+    reversal_date: date
+    amount: Decimal
+    currency: str = "OMR"
+    lines: List[JournalEntryReverseLine]
+
+
 class TransferCreate(BaseModel):
     date: date
     from_account_id: int

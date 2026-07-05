@@ -33,7 +33,9 @@ def _to_response(subscription) -> SubscriptionResponse:
         payment_account_id=subscription.payment_account_id,
         expense_account_id=subscription.expense_account_id,
         payment_journal_entry_id=subscription.payment_journal_entry_id,
+        payment_reversal_journal_entry_id=subscription.payment_reversal_journal_entry_id,
         journal_entry_id=subscription.payment_journal_entry_id,
+        reversal_journal_entry_id=subscription.payment_reversal_journal_entry_id,
         debit_account_id=subscription.expense_account_id,
         credit_account_id=subscription.payment_account_id,
         payment_amount=subscription.amount if subscription.payment_journal_entry_id else None,
@@ -183,6 +185,24 @@ async def mark_subscription_unpaid(
         raise HTTPException(status_code=404, detail="Subscription not found")
     try:
         subscription = await service.mark_unpaid(subscription)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return _to_response(subscription)
+
+
+@router.post("/{subscription_id}/reverse-payment", response_model=SubscriptionResponse)
+async def reverse_subscription_payment(
+    subscription_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Reverse the latest posted subscription payment without deleting journals."""
+    service = SubscriptionService(db, tenant_id=user.organization_id)
+    subscription = await service.get(subscription_id)
+    if subscription is None:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    try:
+        subscription = await service.reverse_payment(subscription)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return _to_response(subscription)

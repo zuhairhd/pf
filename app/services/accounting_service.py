@@ -1,11 +1,12 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 from datetime import datetime, date, timedelta
 from decimal import Decimal
 from typing import List, Dict, Optional
 
 from app.models import Account, JournalEntry, JournalLine, RecurringTransaction
-from app.schemas.accounting import AccountCreate, JournalEntryCreate, TransferCreate
+from app.schemas.accounting import AccountCreate, JournalEntryCreate, JournalLineCreate, TransferCreate
 
 
 class AccountingService:
@@ -101,6 +102,135 @@ class AccountingService:
         await self.db.commit()
         await self.db.refresh(entry)
         return entry
+
+    async def reverse_journal_entry(
+        self,
+        original_journal_entry_id: int,
+        reversal_date: Optional[date] = None,
+        reason: Optional[str] = None,
+        created_by: Optional[int] = None,
+    ) -> JournalEntry:
+        """Create or return an idempotent reversing journal entry.
+
+        The original posted entry and lines are never changed except for
+        reversal metadata that points to the generated reversal entry.
+        """
+        result = await self.db.execute(
+            select(JournalEntry)
+            .options(selectinload(JournalEntry.lines))
+            .where(
+                JournalEntry.id == original_journal_entry_id,
+                JournalEntry.tenant_id == self.tenant_id,
+            )
+        )
+        original = result.scalar_one_or_none()
+        if original is None:
+            raise ValueError("Journal entry not found")
+        if original.reversed_entry_id is not None:
+            raise ValueError("Cannot reverse a reversal journal entry")
+
+        existing = await self._get_existing_reversal(original)
+        if existing is not None:
+            return existing
+
+        if not original.lines:
+            raise ValueError("Journal entry has no lines to reverse")
+
+        effective_date = reversal_date or date.today()
+        reason_text = reason or "No reason provided"
+        reversal_reference = self._reversal_reference(original.id)
+
+        reversal_lines = [
+            JournalLineCreate(
+                account_id=line.account_id,
+                debit=line.credit,
+                credit=line.debit,
+                description=line.description or f"Reversal of {original.reference}",
+            )
+            for line in original.lines
+        ]
+
+        reversal = await self.create_journal_entry(
+            JournalEntryCreate(
+                date=effective_date,
+                narration=f"Reversal of {original.reference}: {reason_text}",
+                reference=reversal_reference,
+                person_id=created_by,
+                lines=reversal_lines,
+            )
+        )
+
+        result = await self.db.execute(
+            select(JournalEntry)
+            .where(
+                JournalEntry.id == original.id,
+                JournalEntry.tenant_id == self.tenant_id,
+            )
+        )
+        original = result.scalar_one()
+        reversal.source = "reversal"
+        reversal.reversed_entry_id = original.id
+        reversal.reversal_reason = reason
+        original.reversal_entry_id = reversal.id
+        original.reversed_at = datetime.utcnow()
+        original.reversal_reason = reason
+        await self.db.commit()
+        result = await self.db.execute(
+            select(JournalEntry)
+            .options(selectinload(JournalEntry.lines))
+            .where(
+                JournalEntry.id == reversal.id,
+                JournalEntry.tenant_id == self.tenant_id,
+            )
+        )
+        return result.scalar_one()
+
+    def _reversal_reference(self, original_journal_entry_id: int) -> str:
+        """Return the deterministic tenant-aware reversal reference."""
+        return f"REV-{self.tenant_id}-{original_journal_entry_id}"
+
+    async def _get_existing_reversal(self, original: JournalEntry) -> Optional[JournalEntry]:
+        """Return the already-created reversal for an original entry, if any."""
+        if original.reversal_entry_id:
+            result = await self.db.execute(
+                select(JournalEntry)
+                .options(selectinload(JournalEntry.lines))
+                .where(
+                    JournalEntry.id == original.reversal_entry_id,
+                    JournalEntry.tenant_id == self.tenant_id,
+                )
+            )
+            reversal = result.scalar_one_or_none()
+            if reversal is not None:
+                return reversal
+
+        result = await self.db.execute(
+            select(JournalEntry)
+            .options(selectinload(JournalEntry.lines))
+            .where(
+                JournalEntry.tenant_id == self.tenant_id,
+                JournalEntry.reversed_entry_id == original.id,
+            )
+        )
+        reversal = result.scalar_one_or_none()
+        if reversal is None:
+            result = await self.db.execute(
+                select(JournalEntry)
+                .options(selectinload(JournalEntry.lines))
+                .where(
+                    JournalEntry.tenant_id == self.tenant_id,
+                    JournalEntry.reference == self._reversal_reference(original.id),
+                )
+            )
+            reversal = result.scalar_one_or_none()
+
+        if reversal is not None:
+            original.reversal_entry_id = reversal.id
+            if original.reversed_at is None:
+                original.reversed_at = datetime.utcnow()
+            await self.db.commit()
+            return reversal
+        return None
     
     async def create_transfer(self, transfer_data: TransferCreate) -> JournalEntry:
         """Create a transfer between accounts (auto-balanced journal entry)."""

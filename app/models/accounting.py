@@ -43,9 +43,25 @@ class JournalEntry(Base, TimestampMixin, TenantMixin):
     person_id = Column(Integer, nullable=True)
     source = Column(String(50), default="manual", nullable=False)  # manual, import, recurring, bank_feed
     is_reconciled = Column(Boolean, default=False, nullable=False)
+    reversed_entry_id = Column(Integer, ForeignKey("journal_entries.id"), nullable=True)
+    reversal_entry_id = Column(Integer, ForeignKey("journal_entries.id"), nullable=True)
+    reversed_at = Column(DateTime, nullable=True)
+    reversal_reason = Column(Text, nullable=True)
     
     # Relationships
     lines = relationship("JournalLine", back_populates="entry", cascade="all, delete-orphan", order_by="JournalLine.id")
+    reversed_entry = relationship(
+        "JournalEntry",
+        foreign_keys=[reversed_entry_id],
+        remote_side=[id],
+        post_update=True,
+    )
+    reversal_entry = relationship(
+        "JournalEntry",
+        foreign_keys=[reversal_entry_id],
+        remote_side=[id],
+        post_update=True,
+    )
 
 
 class JournalLine(Base, TimestampMixin, TenantMixin):

@@ -52,7 +52,9 @@ class BillResponse(BaseModel):
     payment_account_id: Optional[int] = None
     expense_account_id: Optional[int] = None
     payment_journal_entry_id: Optional[int] = None
+    payment_reversal_journal_entry_id: Optional[int] = None
     journal_entry_id: Optional[int] = None
+    reversal_journal_entry_id: Optional[int] = None
     debit_account_id: Optional[int] = None
     credit_account_id: Optional[int] = None
     payment_amount: Optional[Decimal] = None
@@ -110,7 +112,9 @@ class SubscriptionResponse(BaseModel):
     payment_account_id: Optional[int] = None
     expense_account_id: Optional[int] = None
     payment_journal_entry_id: Optional[int] = None
+    payment_reversal_journal_entry_id: Optional[int] = None
     journal_entry_id: Optional[int] = None
+    reversal_journal_entry_id: Optional[int] = None
     debit_account_id: Optional[int] = None
     credit_account_id: Optional[int] = None
     payment_amount: Optional[Decimal] = None

@@ -249,15 +249,21 @@ class BillService:
         return bill
 
     async def mark_unpaid(self, bill: Bill) -> Bill:
-        """Revert a bill to unpaid.
-
-        Bills with a posted payment journal entry cannot be marked unpaid because
-        the accounting engine does not yet support journal-entry reversal.
-        """
+        """Revert a paid bill to unpaid by posting a reversing journal entry."""
         if bill.payment_journal_entry_id:
-            raise ValueError(
-                "Cannot mark bill unpaid: a payment journal entry has already been posted"
-            )
+            if not bill.payment_reversal_journal_entry_id:
+                accounting = AccountingService(self.db, self.tenant_id)
+                reversal = await accounting.reverse_journal_entry(
+                    bill.payment_journal_entry_id,
+                    reason=f"Bill marked unpaid: {bill.name}",
+                )
+                bill.payment_reversal_journal_entry_id = reversal.id
+            bill.is_paid = False
+            bill.paid_at = None
+            await self.db.commit()
+            await self.db.refresh(bill)
+            return bill
+
         bill.is_paid = False
         bill.paid_at = None
         await self.db.commit()
@@ -473,15 +479,25 @@ class SubscriptionService:
         return subscription
 
     async def mark_unpaid(self, subscription: Subscription) -> Subscription:
-        """Block reverting a paid subscription if a journal entry was posted.
-
-        The accounting engine does not yet support journal-entry reversal.
-        """
+        """Reverse a posted subscription payment without deleting accounting rows."""
         if subscription.payment_journal_entry_id:
-            raise ValueError(
-                "Cannot mark subscription unpaid: a payment journal entry has already been posted"
-            )
+            if not subscription.payment_reversal_journal_entry_id:
+                accounting = AccountingService(self.db, self.tenant_id)
+                reversal = await accounting.reverse_journal_entry(
+                    subscription.payment_journal_entry_id,
+                    reason=f"Subscription payment reversed: {subscription.name}",
+                )
+                subscription.payment_reversal_journal_entry_id = reversal.id
+                days = FREQUENCY_DAYS.get(subscription.frequency, 30)
+                subscription.next_billing_date = subscription.next_billing_date - timedelta(days=days)
+            await self.db.commit()
+            await self.db.refresh(subscription)
+            return subscription
         return subscription
+
+    async def reverse_payment(self, subscription: Subscription) -> Subscription:
+        """Alias for subscription payment reversal API calls."""
+        return await self.mark_unpaid(subscription)
 
     async def cancel(self, subscription: Subscription) -> Subscription:
         subscription.status = SubscriptionStatus.CANCELLED

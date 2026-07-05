@@ -41,10 +41,14 @@ class Subscription(Base, TimestampMixin, TenantMixin):
     payment_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
     expense_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
     payment_journal_entry_id = Column(Integer, ForeignKey("journal_entries.id"), nullable=True)
+    payment_reversal_journal_entry_id = Column(Integer, ForeignKey("journal_entries.id"), nullable=True)
 
     payment_account = relationship("Account", foreign_keys=[payment_account_id])
     expense_account = relationship("Account", foreign_keys=[expense_account_id])
     payment_journal_entry = relationship("JournalEntry", foreign_keys=[payment_journal_entry_id])
+    payment_reversal_journal_entry = relationship(
+        "JournalEntry", foreign_keys=[payment_reversal_journal_entry_id]
+    )
 
 
 class Bill(Base, TimestampMixin, TenantMixin):
@@ -69,10 +73,14 @@ class Bill(Base, TimestampMixin, TenantMixin):
     payment_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
     expense_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
     payment_journal_entry_id = Column(Integer, ForeignKey("journal_entries.id"), nullable=True)
+    payment_reversal_journal_entry_id = Column(Integer, ForeignKey("journal_entries.id"), nullable=True)
 
     payment_account = relationship("Account", foreign_keys=[payment_account_id])
     expense_account = relationship("Account", foreign_keys=[expense_account_id])
     payment_journal_entry = relationship("JournalEntry", foreign_keys=[payment_journal_entry_id])
+    payment_reversal_journal_entry = relationship(
+        "JournalEntry", foreign_keys=[payment_reversal_journal_entry_id]
+    )
 
     # AI fields
     ai_predicted_amount = Column(Numeric(15, 3), nullable=True)

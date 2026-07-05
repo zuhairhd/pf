@@ -425,13 +425,31 @@ Card 1 (Database) ✅
 
 ## Exact Recommended Next Card
 
-### Card 14: ACC-503A — Journal Entry Reversal Support
+### Card 15: FAM-1300 — Family Finance Module
 
-**Decision:** BILL-801A safely blocks mark-unpaid after a payment journal entry is posted. The next accounting card should add reversal entries through `AccountingService` so paid bills/subscriptions can be safely reverted without deleting posted journal entries.
+**Decision:** ACC-503A completes the accounting safety gap left by BILL-801A. The next recommended card should move into the family finance model because `FamilyMember` currently exists only as a partial identity-adjacent model, with no full family/household finance module, shared/private account behavior, or invitation workflow.
 
-**What to tell the coding agent for ACC-503A:**
+**What to tell the coding agent for FAM-1300:**
 
-> "Implement ACC-503A: Add journal-entry reversal support to the accounting engine. Reversals must create new balanced reversing entries, never delete posted entries, preserve tenant isolation/RLS, and integrate with bill/subscription mark-unpaid flows."
+> "Implement FAM-1300: Build the family finance module foundation. Define family/household relationships, roles, visibility rules, invitation flow integration, shared vs private financial data behavior, RLS-safe service methods, and focused tests."
+
+---
+
+## Completed Card 14
+
+### Card 14: ACC-503A - Journal Entry Reversal Support DONE
+
+**Completed:**
+- Added `AccountingService.reverse_journal_entry()` to create balanced reversing entries.
+- Added reversal metadata on `journal_entries`.
+- Added bill/subscription payment reversal journal links.
+- Bill mark-unpaid now creates a reversal entry instead of blocking.
+- Subscription mark-unpaid and `reverse-payment` now create a reversal entry.
+- Reversals are idempotent and use deterministic references: `REV-{tenant_id}-{original_journal_entry_id}`.
+- Direct API route added: `POST /accounts/journal-entries/{journal_entry_id}/reverse`.
+- Tenant isolation and RLS remain enforced.
+
+**Migration:** `a7c9d2e4f601`
 
 ---
 
@@ -451,7 +469,7 @@ Once these 12 cards are complete, the project will have:
 - Bills and subscriptions dashboard widget UI
 
 **Next batch (Cards 14-23):**
-- Journal entry reversal support (ACC-503A)
+- Family finance module (FAM-1300)
 - Family finance module (FAM-1300)
 - Reports (REP-2000)
 - Document OCR (DOC-2100)
