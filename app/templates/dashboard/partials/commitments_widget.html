@@ -28,6 +28,12 @@
     </div>
 
     <div class="card-body">
+        {% if payment_error %}
+        <div class="alert alert-warning py-2 mb-3" role="alert">
+            {{ payment_error }}. Open the bill details and choose payment and expense accounts before marking it paid.
+        </div>
+        {% endif %}
+
         <!-- Summary Row -->
         <div class="row g-3 mb-4">
             <div class="col-sm-6 col-lg-3">

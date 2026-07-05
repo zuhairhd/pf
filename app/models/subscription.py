@@ -37,6 +37,15 @@ class Subscription(Base, TimestampMixin, TenantMixin):
     # Linked transaction pattern
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
 
+    # Payment posting
+    payment_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
+    expense_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
+    payment_journal_entry_id = Column(Integer, ForeignKey("journal_entries.id"), nullable=True)
+
+    payment_account = relationship("Account", foreign_keys=[payment_account_id])
+    expense_account = relationship("Account", foreign_keys=[expense_account_id])
+    payment_journal_entry = relationship("JournalEntry", foreign_keys=[payment_journal_entry_id])
+
 
 class Bill(Base, TimestampMixin, TenantMixin):
     """A predictable bill with due date."""
@@ -55,6 +64,15 @@ class Bill(Base, TimestampMixin, TenantMixin):
     # Payment tracking
     is_paid = Column(Boolean, default=False, nullable=False)
     paid_at = Column(DateTime, nullable=True)
+
+    # Payment posting
+    payment_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
+    expense_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
+    payment_journal_entry_id = Column(Integer, ForeignKey("journal_entries.id"), nullable=True)
+
+    payment_account = relationship("Account", foreign_keys=[payment_account_id])
+    expense_account = relationship("Account", foreign_keys=[expense_account_id])
+    payment_journal_entry = relationship("JournalEntry", foreign_keys=[payment_journal_entry_id])
 
     # AI fields
     ai_predicted_amount = Column(Numeric(15, 3), nullable=True)

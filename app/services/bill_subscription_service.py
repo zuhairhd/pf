@@ -9,8 +9,10 @@ from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 
-from app.models import Bill, Subscription
+from app.models import Account, Bill, JournalEntry, Subscription
 from app.models.subscription import SubscriptionStatus
+from app.schemas.accounting import JournalEntryCreate, JournalLineCreate
+from app.services.accounting_service import AccountingService
 
 
 FREQUENCY_DAYS = {
@@ -60,6 +62,8 @@ class BillService:
             frequency=data.get("frequency", "monthly"),
             is_auto_pay=data.get("is_auto_pay", False),
             payment_method=data.get("payment_method"),
+            payment_account_id=data.get("payment_account_id"),
+            expense_account_id=data.get("expense_account_id"),
             is_active=True,
             is_paid=False,
         )
@@ -92,7 +96,17 @@ class BillService:
         return result.scalar_one_or_none()
 
     async def update(self, bill: Bill, data: dict) -> Bill:
-        for field in ("name", "provider", "typical_amount", "due_date", "frequency", "is_auto_pay", "payment_method"):
+        for field in (
+            "name",
+            "provider",
+            "typical_amount",
+            "due_date",
+            "frequency",
+            "is_auto_pay",
+            "payment_method",
+            "payment_account_id",
+            "expense_account_id",
+        ):
             if field in data and data[field] is not None:
                 value = data[field]
                 if field == "due_date":
@@ -108,20 +122,142 @@ class BillService:
         await self.db.delete(bill)
         await self.db.commit()
 
-    async def mark_paid(self, bill: Bill) -> Bill:
-        """Mark a bill as paid.
+    async def _get_account(self, account_id: int) -> Optional[Account]:
+        """Fetch a tenant account by ID."""
+        result = await self.db.execute(
+            select(Account).where(
+                Account.id == account_id,
+                Account.tenant_id == self.tenant_id,
+            )
+        )
+        return result.scalar_one_or_none()
 
-        Accounting-entry creation is intentionally deferred to BILL-801A so that
-        this card stays focused on the Bills/Subscriptions API surface and does
-        not bypass the double-entry engine.
+    @staticmethod
+    def _validate_payment_account(account: Account) -> None:
+        if account.account_type != "Asset":
+            raise ValueError("Payment account must be an Asset account")
+
+    @staticmethod
+    def _validate_expense_account(account: Account) -> None:
+        if account.account_type != "Expense":
+            raise ValueError("Expense account must be an Expense account")
+
+    async def _create_payment_journal_entry(
+        self,
+        *,
+        amount: Decimal,
+        payment_date: date,
+        narration: str,
+        reference: str,
+        line_description: Optional[str],
+        payment_account: Account,
+        expense_account: Account,
+        source: str,
+    ) -> JournalEntry:
+        """Create a balanced double-entry journal entry for a payment."""
+        existing = await self.db.execute(
+            select(JournalEntry).where(
+                JournalEntry.tenant_id == self.tenant_id,
+                JournalEntry.reference == reference,
+            )
+        )
+        existing_entry = existing.scalar_one_or_none()
+        if existing_entry is not None:
+            return existing_entry
+
+        accounting = AccountingService(self.db, self.tenant_id)
+        entry = await accounting.create_journal_entry(
+            JournalEntryCreate(
+                date=payment_date,
+                narration=narration,
+                reference=reference,
+                lines=[
+                    JournalLineCreate(
+                        account_id=expense_account.id,
+                        debit=amount,
+                        credit=Decimal("0"),
+                        description=line_description or narration,
+                    ),
+                    JournalLineCreate(
+                        account_id=payment_account.id,
+                        debit=Decimal("0"),
+                        credit=amount,
+                        description=line_description or narration,
+                    ),
+                ],
+            )
+        )
+        entry.source = source
+        await self.db.commit()
+        return entry
+
+    async def mark_paid(self, bill: Bill, data: Optional[dict] = None) -> Bill:
+        """Mark a bill as paid and post a balanced journal entry.
+
+        Idempotent: if ``payment_journal_entry_id`` is already set, the existing
+        journal entry is reused and no new entry is created.
         """
+        data = data or {}
+        if bill.payment_journal_entry_id:
+            return bill
+
+        payment_account_id = data.get("payment_account_id") or bill.payment_account_id
+        expense_account_id = data.get("expense_account_id") or bill.expense_account_id
+        if not payment_account_id:
+            raise ValueError("Payment account is required")
+        if not expense_account_id:
+            raise ValueError("Expense account is required")
+
+        payment_account = await self._get_account(payment_account_id)
+        if payment_account is None:
+            raise ValueError("Payment account not found")
+        self._validate_payment_account(payment_account)
+
+        expense_account = await self._get_account(expense_account_id)
+        if expense_account is None:
+            raise ValueError("Expense account not found")
+        self._validate_expense_account(expense_account)
+
+        payment_date = data.get("payment_date")
+        if isinstance(payment_date, str):
+            payment_date = date.fromisoformat(payment_date)
+        if payment_date is None:
+            payment_date = date.today()
+
+        narration = f"Bill payment: {bill.name}"
+        reference = f"BILL-{self.tenant_id}-{bill.id}"
+        line_description = data.get("notes")
+
+        entry = await self._create_payment_journal_entry(
+            amount=bill.typical_amount,
+            payment_date=payment_date,
+            narration=narration,
+            reference=reference,
+            line_description=line_description,
+            payment_account=payment_account,
+            expense_account=expense_account,
+            source="bill_payment",
+        )
+
         bill.is_paid = True
         bill.paid_at = datetime.utcnow()
+        bill.payment_account_id = payment_account.id
+        bill.expense_account_id = expense_account.id
+        bill.payment_journal_entry_id = entry.id
         await self.db.commit()
         await self.db.refresh(bill)
         return bill
 
     async def mark_unpaid(self, bill: Bill) -> Bill:
+        """Revert a bill to unpaid.
+
+        Bills with a posted payment journal entry cannot be marked unpaid because
+        the accounting engine does not yet support journal-entry reversal.
+        """
+        if bill.payment_journal_entry_id:
+            raise ValueError(
+                "Cannot mark bill unpaid: a payment journal entry has already been posted"
+            )
         bill.is_paid = False
         bill.paid_at = None
         await self.db.commit()
@@ -155,6 +291,8 @@ class SubscriptionService:
             next_billing_date=_coerce_date(data["next_billing_date"]),
             category=data.get("category"),
             account_id=data.get("account_id"),
+            payment_account_id=data.get("payment_account_id"),
+            expense_account_id=data.get("expense_account_id"),
             status=SubscriptionStatus.ACTIVE,
             is_active=True,
         )
@@ -181,7 +319,17 @@ class SubscriptionService:
         return result.scalar_one_or_none()
 
     async def update(self, subscription: Subscription, data: dict) -> Subscription:
-        for field in ("name", "provider", "amount", "frequency", "next_billing_date", "category", "account_id"):
+        for field in (
+            "name",
+            "provider",
+            "amount",
+            "frequency",
+            "next_billing_date",
+            "category",
+            "account_id",
+            "payment_account_id",
+            "expense_account_id",
+        ):
             if field in data and data[field] is not None:
                 value = data[field]
                 if field == "next_billing_date":
@@ -197,16 +345,142 @@ class SubscriptionService:
         await self.db.delete(subscription)
         await self.db.commit()
 
-    async def mark_paid(self, subscription: Subscription) -> Subscription:
-        """Record that the latest renewal has been paid.
+    async def _get_account(self, account_id: int) -> Optional[Account]:
+        """Fetch a tenant account by ID."""
+        result = await self.db.execute(
+            select(Account).where(
+                Account.id == account_id,
+                Account.tenant_id == self.tenant_id,
+            )
+        )
+        return result.scalar_one_or_none()
 
-        The next billing date is advanced by one period. No journal entry is
-        created here; see BILL-801A for accounting-engine integration.
+    @staticmethod
+    def _validate_payment_account(account: Account) -> None:
+        if account.account_type != "Asset":
+            raise ValueError("Payment account must be an Asset account")
+
+    @staticmethod
+    def _validate_expense_account(account: Account) -> None:
+        if account.account_type != "Expense":
+            raise ValueError("Expense account must be an Expense account")
+
+    async def _create_payment_journal_entry(
+        self,
+        *,
+        amount: Decimal,
+        payment_date: date,
+        narration: str,
+        reference: str,
+        line_description: Optional[str],
+        payment_account: Account,
+        expense_account: Account,
+        source: str,
+    ) -> JournalEntry:
+        """Create a balanced double-entry journal entry for a payment."""
+        existing = await self.db.execute(
+            select(JournalEntry).where(
+                JournalEntry.tenant_id == self.tenant_id,
+                JournalEntry.reference == reference,
+            )
+        )
+        existing_entry = existing.scalar_one_or_none()
+        if existing_entry is not None:
+            return existing_entry
+
+        accounting = AccountingService(self.db, self.tenant_id)
+        entry = await accounting.create_journal_entry(
+            JournalEntryCreate(
+                date=payment_date,
+                narration=narration,
+                reference=reference,
+                lines=[
+                    JournalLineCreate(
+                        account_id=expense_account.id,
+                        debit=amount,
+                        credit=Decimal("0"),
+                        description=line_description or narration,
+                    ),
+                    JournalLineCreate(
+                        account_id=payment_account.id,
+                        debit=Decimal("0"),
+                        credit=amount,
+                        description=line_description or narration,
+                    ),
+                ],
+            )
+        )
+        entry.source = source
+        await self.db.commit()
+        return entry
+
+    async def mark_paid(self, subscription: Subscription, data: Optional[dict] = None) -> Subscription:
+        """Record that the latest renewal has been paid, post a journal entry, and advance billing.
+
+        Idempotent: if ``payment_journal_entry_id`` is already set, the existing
+        journal entry is reused and no new entry is created.
         """
+        data = data or {}
+
+        if subscription.payment_journal_entry_id:
+            return subscription
+
+        payment_account_id = data.get("payment_account_id") or subscription.payment_account_id
+        expense_account_id = data.get("expense_account_id") or subscription.expense_account_id
+        if not payment_account_id:
+            raise ValueError("Payment account is required")
+        if not expense_account_id:
+            raise ValueError("Expense account is required")
+
+        payment_account = await self._get_account(payment_account_id)
+        if payment_account is None:
+            raise ValueError("Payment account not found")
+        self._validate_payment_account(payment_account)
+
+        expense_account = await self._get_account(expense_account_id)
+        if expense_account is None:
+            raise ValueError("Expense account not found")
+        self._validate_expense_account(expense_account)
+
+        payment_date = data.get("payment_date")
+        if isinstance(payment_date, str):
+            payment_date = date.fromisoformat(payment_date)
+        if payment_date is None:
+            payment_date = date.today()
+
+        narration = f"Subscription payment: {subscription.name}"
+        reference = f"SUB-{self.tenant_id}-{subscription.id}"
+        line_description = data.get("notes")
+
+        entry = await self._create_payment_journal_entry(
+            amount=subscription.amount,
+            payment_date=payment_date,
+            narration=narration,
+            reference=reference,
+            line_description=line_description,
+            payment_account=payment_account,
+            expense_account=expense_account,
+            source="subscription_payment",
+        )
+        subscription.payment_account_id = payment_account.id
+        subscription.expense_account_id = expense_account.id
+        subscription.payment_journal_entry_id = entry.id
+
         days = FREQUENCY_DAYS.get(subscription.frequency, 30)
         subscription.next_billing_date = subscription.next_billing_date + timedelta(days=days)
         await self.db.commit()
         await self.db.refresh(subscription)
+        return subscription
+
+    async def mark_unpaid(self, subscription: Subscription) -> Subscription:
+        """Block reverting a paid subscription if a journal entry was posted.
+
+        The accounting engine does not yet support journal-entry reversal.
+        """
+        if subscription.payment_journal_entry_id:
+            raise ValueError(
+                "Cannot mark subscription unpaid: a payment journal entry has already been posted"
+            )
         return subscription
 
     async def cancel(self, subscription: Subscription) -> Subscription:

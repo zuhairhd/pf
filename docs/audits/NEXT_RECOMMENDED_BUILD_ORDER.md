@@ -407,15 +407,31 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 13
+
+### Card 13: BILL-801A — Bill Payment Posting Through Accounting Engine DONE
+
+**Completed:**
+- Bills and subscriptions now post balanced payment journal entries through `AccountingService`.
+- Mark-paid validates tenant-owned Asset payment accounts and Expense debit accounts.
+- `payment_journal_entry_id` prevents duplicate posting.
+- Deterministic tenant-aware references are used: `BILL-{tenant_id}-{bill_id}` and `SUB-{tenant_id}-{subscription_id}`.
+- Dashboard bill mark-paid uses the same safe service path and returns a clear missing-account warning.
+- Mark-unpaid is blocked after payment posting because journal-entry reversal support is not implemented.
+
+**Migration:** `89f59125ee5e`
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 13: BILL-801A — Bill Payment Posting Through Accounting Engine
+### Card 14: ACC-503A — Journal Entry Reversal Support
 
-**Decision:** Bills and subscriptions can now be marked paid, but the `mark-paid` operation only updates status. The next logical step is to post an actual journal entry through the double-entry accounting engine when a bill or subscription is paid, ensuring the general ledger stays accurate.
+**Decision:** BILL-801A safely blocks mark-unpaid after a payment journal entry is posted. The next accounting card should add reversal entries through `AccountingService` so paid bills/subscriptions can be safely reverted without deleting posted journal entries.
 
-**What to tell the coding agent for BILL-801A:**
+**What to tell the coding agent for ACC-503A:**
 
-> "Implement Card BILL-801A: When a bill or subscription is marked paid, create a balanced journal entry via the existing `AccountingService` (debit expense/liability, credit bank/cash). Add safe defaults for debit/credit accounts, handle missing accounts gracefully, and ensure RLS remains enforced. Add tests proving the journal entry is created and the account balances move correctly. Run `python -m pytest -q` after changes."
+> "Implement ACC-503A: Add journal-entry reversal support to the accounting engine. Reversals must create new balanced reversing entries, never delete posted entries, preserve tenant isolation/RLS, and integrate with bill/subscription mark-unpaid flows."
 
 ---
 
@@ -434,8 +450,8 @@ Once these 12 cards are complete, the project will have:
 - Email notifications and bill/subscription reminders
 - Bills and subscriptions dashboard widget UI
 
-**Next batch (Cards 13-22):**
-- Bill payment posting through accounting engine (BILL-801A)
+**Next batch (Cards 14-23):**
+- Journal entry reversal support (ACC-503A)
 - Family finance module (FAM-1300)
 - Reports (REP-2000)
 - Document OCR (DOC-2100)

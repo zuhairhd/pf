@@ -19,6 +19,32 @@ from app.tests.helpers import (
 )
 
 
+async def _create_account(client, headers, unique, *, account_type: str, name: str):
+    payload = {
+        "code": unique(name)[:20],
+        "name": unique(name),
+        "account_type": account_type,
+        "is_bank_account": account_type == "Asset",
+    }
+    response = await client.post("/accounts/", json=payload, headers=headers)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+async def _bill_payload_with_accounts(client, headers, unique, bill_payload):
+    payment = await _create_account(
+        client, headers, unique, account_type="Asset", name="DashboardBank"
+    )
+    expense = await _create_account(
+        client, headers, unique, account_type="Expense", name="DashboardExpense"
+    )
+    return {
+        **bill_payload,
+        "payment_account_id": payment["id"],
+        "expense_account_id": expense["id"],
+    }
+
+
 @pytest.fixture
 def bill_payload():
     return {
@@ -183,10 +209,11 @@ async def test_tenant_a_cannot_see_tenant_b_dashboard_data(
 @pytest.mark.integration
 @pytest.mark.anyio
 async def test_dashboard_mark_paid_quick_action(
-    client, auth_headers, bill_payload
+    client, auth_headers, bill_payload, unique
 ):
-    """Marking a bill paid from the dashboard refreshes the widget."""
-    create_response = await client.post("/bills", json=bill_payload, headers=auth_headers)
+    """Marking an account-configured bill paid refreshes the widget."""
+    payload = await _bill_payload_with_accounts(client, auth_headers, unique, bill_payload)
+    create_response = await client.post("/bills", json=payload, headers=auth_headers)
     bill_id = create_response.json()["id"]
 
     response = await client.post(
@@ -201,6 +228,30 @@ async def test_dashboard_mark_paid_quick_action(
     )
     data = commitments_response.json()
     assert data["upcoming_bills_count"] == 0
+
+    repeat_response = await client.post(
+        f"/dashboard/partials/bills/{bill_id}/mark-paid",
+        headers=auth_headers,
+    )
+    assert repeat_response.status_code == 200, repeat_response.text
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_dashboard_mark_paid_missing_accounts_returns_clear_error(
+    client, auth_headers, bill_payload
+):
+    """Dashboard quick action does not post when payment accounts are missing."""
+    create_response = await client.post("/bills", json=bill_payload, headers=auth_headers)
+    bill_id = create_response.json()["id"]
+
+    response = await client.post(
+        f"/dashboard/partials/bills/{bill_id}/mark-paid",
+        headers=auth_headers,
+    )
+    assert response.status_code == 400, response.text
+    assert "Payment account is required" in response.text
+    assert "choose payment and expense accounts" in response.text
 
 
 @pytest.mark.integration

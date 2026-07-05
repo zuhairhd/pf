@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_db_with_tenant_context, require_tenant_member
 from app.models import User
-from app.schemas.bill_subscription import BillCreate, BillUpdate, BillResponse
+from app.schemas.bill_subscription import BillCreate, BillUpdate, BillResponse, MarkPaidRequest
 from app.services.bill_subscription_service import BillService
 
 
@@ -41,6 +41,13 @@ def _to_response(bill) -> BillResponse:
         payment_method=bill.payment_method,
         is_paid=bill.is_paid,
         paid_at=bill.paid_at,
+        payment_account_id=bill.payment_account_id,
+        expense_account_id=bill.expense_account_id,
+        payment_journal_entry_id=bill.payment_journal_entry_id,
+        journal_entry_id=bill.payment_journal_entry_id,
+        debit_account_id=bill.expense_account_id,
+        credit_account_id=bill.payment_account_id,
+        payment_amount=bill.typical_amount if bill.payment_journal_entry_id else None,
         status=_bill_status(bill),
         ai_predicted_amount=bill.ai_predicted_amount,
         ai_trend=bill.ai_trend,
@@ -144,15 +151,20 @@ async def delete_bill(
 @router.post("/{bill_id}/mark-paid", response_model=BillResponse)
 async def mark_bill_paid(
     bill_id: int,
+    payload: Optional[MarkPaidRequest] = None,
     db: AsyncSession = Depends(get_db_with_tenant_context),
     user: User = Depends(require_tenant_member),
 ):
-    """Mark a bill as paid."""
+    """Mark a bill as paid and post a journal entry."""
     service = BillService(db, tenant_id=user.organization_id)
     bill = await service.get(bill_id)
     if bill is None:
         raise HTTPException(status_code=404, detail="Bill not found")
-    bill = await service.mark_paid(bill)
+    data = payload.model_dump(exclude_unset=True) if payload else {}
+    try:
+        bill = await service.mark_paid(bill, data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     return _to_response(bill)
 
 
@@ -167,7 +179,10 @@ async def mark_bill_unpaid(
     bill = await service.get(bill_id)
     if bill is None:
         raise HTTPException(status_code=404, detail="Bill not found")
-    bill = await service.mark_unpaid(bill)
+    try:
+        bill = await service.mark_unpaid(bill)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     return _to_response(bill)
 
 

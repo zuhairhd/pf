@@ -21,6 +21,8 @@ class BillCreate(BaseModel):
     frequency: str = Field(default="monthly", pattern="^(one-time|weekly|monthly|quarterly|yearly)$")
     is_auto_pay: bool = False
     payment_method: Optional[str] = Field(default=None, max_length=100)
+    payment_account_id: Optional[int] = None
+    expense_account_id: Optional[int] = None
 
 
 class BillUpdate(BaseModel):
@@ -31,6 +33,8 @@ class BillUpdate(BaseModel):
     frequency: Optional[str] = Field(default=None, pattern="^(one-time|weekly|monthly|quarterly|yearly)$")
     is_auto_pay: Optional[bool] = None
     payment_method: Optional[str] = Field(default=None, max_length=100)
+    payment_account_id: Optional[int] = None
+    expense_account_id: Optional[int] = None
 
 
 class BillResponse(BaseModel):
@@ -45,6 +49,14 @@ class BillResponse(BaseModel):
     payment_method: Optional[str] = None
     is_paid: bool
     paid_at: Optional[datetime] = None
+    payment_account_id: Optional[int] = None
+    expense_account_id: Optional[int] = None
+    payment_journal_entry_id: Optional[int] = None
+    journal_entry_id: Optional[int] = None
+    debit_account_id: Optional[int] = None
+    credit_account_id: Optional[int] = None
+    payment_amount: Optional[Decimal] = None
+    currency: str = "OMR"
     status: str  # computed: upcoming | paid | overdue | cancelled
     ai_predicted_amount: Optional[Decimal] = None
     ai_trend: Optional[str] = None
@@ -67,6 +79,8 @@ class SubscriptionCreate(BaseModel):
     next_billing_date: date
     category: Optional[str] = Field(default=None, max_length=100)
     account_id: Optional[int] = None
+    payment_account_id: Optional[int] = None
+    expense_account_id: Optional[int] = None
 
 
 class SubscriptionUpdate(BaseModel):
@@ -77,6 +91,8 @@ class SubscriptionUpdate(BaseModel):
     next_billing_date: Optional[date] = None
     category: Optional[str] = Field(default=None, max_length=100)
     account_id: Optional[int] = None
+    payment_account_id: Optional[int] = None
+    expense_account_id: Optional[int] = None
 
 
 class SubscriptionResponse(BaseModel):
@@ -91,6 +107,14 @@ class SubscriptionResponse(BaseModel):
     status: str  # active | paused | cancelled
     is_active: bool
     account_id: Optional[int] = None
+    payment_account_id: Optional[int] = None
+    expense_account_id: Optional[int] = None
+    payment_journal_entry_id: Optional[int] = None
+    journal_entry_id: Optional[int] = None
+    debit_account_id: Optional[int] = None
+    credit_account_id: Optional[int] = None
+    payment_amount: Optional[Decimal] = None
+    currency: str = "OMR"
     days_until_renewal: Optional[int] = None
     monthly_equivalent_amount: Decimal
     yearly_equivalent_amount: Decimal
@@ -119,3 +143,10 @@ class CommitmentSummary(BaseModel):
     overdue_bills: List[BillResponse] = []
     upcoming_renewals: List[SubscriptionResponse] = []
     currency: str = "OMR"
+
+
+class MarkPaidRequest(BaseModel):
+    payment_account_id: Optional[int] = None
+    expense_account_id: Optional[int] = None
+    payment_date: Optional[date] = None
+    notes: Optional[str] = Field(default=None, max_length=500)

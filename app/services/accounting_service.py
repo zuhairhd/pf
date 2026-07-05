@@ -73,8 +73,8 @@ class AccountingService:
         if len(entry_data.lines) < 2:
             raise ValueError("Journal entry must have at least two lines")
         
-        # Generate reference
-        ref = await self._generate_reference(entry_data.date)
+        # Generate reference unless the caller supplies a deterministic one.
+        ref = entry_data.reference or await self._generate_reference(entry_data.date)
         
         entry = JournalEntry(
             tenant_id=self.tenant_id,

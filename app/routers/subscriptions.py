@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_db_with_tenant_context, require_tenant_member
 from app.models import User
-from app.schemas.bill_subscription import SubscriptionCreate, SubscriptionUpdate, SubscriptionResponse
+from app.schemas.bill_subscription import SubscriptionCreate, SubscriptionUpdate, SubscriptionResponse, MarkPaidRequest
 from app.services.bill_subscription_service import SubscriptionService
 
 
@@ -30,6 +30,13 @@ def _to_response(subscription) -> SubscriptionResponse:
         status=subscription.status,
         is_active=subscription.is_active,
         account_id=subscription.account_id,
+        payment_account_id=subscription.payment_account_id,
+        expense_account_id=subscription.expense_account_id,
+        payment_journal_entry_id=subscription.payment_journal_entry_id,
+        journal_entry_id=subscription.payment_journal_entry_id,
+        debit_account_id=subscription.expense_account_id,
+        credit_account_id=subscription.payment_account_id,
+        payment_amount=subscription.amount if subscription.payment_journal_entry_id else None,
         days_until_renewal=SubscriptionService.days_until_renewal(subscription),
         monthly_equivalent_amount=SubscriptionService.monthly_equivalent(subscription),
         yearly_equivalent_amount=SubscriptionService.yearly_equivalent(subscription),
@@ -146,15 +153,38 @@ async def delete_subscription(
 @router.post("/{subscription_id}/mark-paid", response_model=SubscriptionResponse)
 async def mark_subscription_paid(
     subscription_id: int,
+    payload: Optional[MarkPaidRequest] = None,
     db: AsyncSession = Depends(get_db_with_tenant_context),
     user: User = Depends(require_tenant_member),
 ):
-    """Record a subscription renewal as paid and advance the billing date."""
+    """Record a subscription renewal as paid and post a journal entry."""
     service = SubscriptionService(db, tenant_id=user.organization_id)
     subscription = await service.get(subscription_id)
     if subscription is None:
         raise HTTPException(status_code=404, detail="Subscription not found")
-    subscription = await service.mark_paid(subscription)
+    data = payload.model_dump(exclude_unset=True) if payload else {}
+    try:
+        subscription = await service.mark_paid(subscription, data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return _to_response(subscription)
+
+
+@router.post("/{subscription_id}/mark-unpaid", response_model=SubscriptionResponse)
+async def mark_subscription_unpaid(
+    subscription_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Safely handle attempts to revert a paid subscription."""
+    service = SubscriptionService(db, tenant_id=user.organization_id)
+    subscription = await service.get(subscription_id)
+    if subscription is None:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    try:
+        subscription = await service.mark_unpaid(subscription)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     return _to_response(subscription)
 
 

@@ -85,8 +85,8 @@
 | IMP-701 | Excel Import | **Missing** |
 | IMP-702 | SMS Bank Alert Parser | **Done** (`app/imports/parsers/sms_parser.py`, `/imports/sms/parse`, tests) |
 | IMP-703 | Import UI Refinements | **Missing** |
-| BILL-800 to BILL-801 | Bills | **Done** (`app/routers/bills.py`, CRUD, mark-paid, upcoming/overdue, dashboard summary, tests) |
-| SUB-900 to SUB-901 | Subscriptions | **Done** (`app/routers/subscriptions.py`, CRUD, pause/cancel/activate, renewals, equivalent amounts, tests) |
+| BILL-800 to BILL-801A | Bills | **Done** (`app/routers/bills.py`, CRUD, mark-paid payment posting through `AccountingService`, upcoming/overdue, dashboard summary, tests) |
+| SUB-900 to SUB-901 | Subscriptions | **Done** (`app/routers/subscriptions.py`, CRUD, mark-paid payment posting through `AccountingService`, pause/cancel/activate, renewals, equivalent amounts, tests) |
 | BDG-1000 to BDG-1003 | Budgets | Partial (models, routes, service exist) |
 | DB-1100 to DB-1105 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI; Partial for remaining dashboard widgets |
 | AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client; Partial for remaining AI engines (health score, chat, what-if, orchestrator exist but not all wired to LLM) |
@@ -131,6 +131,12 @@
 13. **API-1900** — Public REST API
 14. **MOB-2200** — PWA/mobile
 15. **FEED-2300** — Bank feeds
+
+---
+
+## Latest Completed Card
+
+**BILL-801A - Bill and Subscription Payment Posting Through Accounting Engine** is complete. Mark-paid now posts balanced journal entries through `AccountingService`, prevents duplicate posting, validates tenant-owned Asset/Expense accounts, and blocks mark-unpaid after posting until `ACC-503A - Journal Entry Reversal Support` is implemented.
 
 ---
 

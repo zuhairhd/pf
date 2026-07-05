@@ -51,6 +51,13 @@ def _serialize_bill(bill) -> dict:
         payment_method=bill.payment_method,
         is_paid=bill.is_paid,
         paid_at=bill.paid_at,
+        payment_account_id=bill.payment_account_id,
+        expense_account_id=bill.expense_account_id,
+        payment_journal_entry_id=bill.payment_journal_entry_id,
+        journal_entry_id=bill.payment_journal_entry_id,
+        debit_account_id=bill.expense_account_id,
+        credit_account_id=bill.payment_account_id,
+        payment_amount=bill.typical_amount if bill.payment_journal_entry_id else None,
         status=_bill_status(bill),
         ai_predicted_amount=bill.ai_predicted_amount,
         ai_trend=bill.ai_trend,
@@ -73,6 +80,13 @@ def _serialize_subscription(subscription) -> dict:
         status=subscription.status,
         is_active=subscription.is_active,
         account_id=subscription.account_id,
+        payment_account_id=subscription.payment_account_id,
+        expense_account_id=subscription.expense_account_id,
+        payment_journal_entry_id=subscription.payment_journal_entry_id,
+        journal_entry_id=subscription.payment_journal_entry_id,
+        debit_account_id=subscription.expense_account_id,
+        credit_account_id=subscription.payment_account_id,
+        payment_amount=subscription.amount if subscription.payment_journal_entry_id else None,
         days_until_renewal=SubscriptionService.days_until_renewal(subscription),
         monthly_equivalent_amount=SubscriptionService.monthly_equivalent(subscription),
         yearly_equivalent_amount=SubscriptionService.yearly_equivalent(subscription),
@@ -241,7 +255,13 @@ async def mark_bill_paid_partial(
     bill = await bill_service.get(bill_id)
     if bill is None:
         raise HTTPException(status_code=404, detail="Bill not found")
-    await bill_service.mark_paid(bill)
+    payment_error = None
+    status_code = 200
+    try:
+        await bill_service.mark_paid(bill)
+    except ValueError as exc:
+        payment_error = str(exc)
+        status_code = 400
     commitments = await _build_commitments(db, user.organization_id)
     return templates.TemplateResponse(
         request,
@@ -250,7 +270,9 @@ async def mark_bill_paid_partial(
             "commitments": commitments,
             "currency": settings.CURRENCY_DEFAULT,
             "is_admin": _is_admin(user),
+            "payment_error": payment_error,
         },
+        status_code=status_code,
     )
 
 

@@ -33,6 +33,7 @@ class JournalEntryCreate(BaseModel):
     narration: str = Field(..., min_length=1, max_length=500)
     lines: List[JournalLineCreate]
     person_id: Optional[int] = None
+    reference: Optional[str] = Field(default=None, min_length=1, max_length=50)
 
 
 class TransferCreate(BaseModel):
