@@ -25,7 +25,8 @@ from app.models.database import Base
 
 # Import all models to register them with metadata
 from app.models.tenant import Organization, TenantSubscription
-from app.models.user import User, FamilyMember
+from app.models.user import User
+from app.models.family import Family, FamilyMember, FamilyRole
 from app.models.auth import RefreshToken, EmailVerification, PasswordReset
 from app.models.accounting import Account, JournalEntry, JournalLine, RecurringTransaction
 from app.models.budget import Budget, BudgetCategory, BudgetAlert
