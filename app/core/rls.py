@@ -138,6 +138,8 @@ TENANT_SCOPED_TABLES = [
     "budgets",
     "credit_profiles",
     "documents",
+    "families",
+    "family_members",
     "feature_usage",
     "goals",
     "investments",
@@ -179,7 +181,6 @@ GLOBAL_TABLES = [
     "alembic_version",        # Alembic internal migration tracking
     "organizations",          # The tenant table itself
     "users",                  # Auth lookup by email; app-level org filtering
-    "family_members",         # User-scoped (app-level user filtering)
     "refresh_tokens",         # Auth system
     "email_verifications",    # Auth system
     "password_resets",        # Auth system

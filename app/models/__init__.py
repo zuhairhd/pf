@@ -1,7 +1,8 @@
 from app.models.database import Base
 from app.models.mixins import TimestampMixin, TenantMixin, SoftDeleteMixin
 from app.models.tenant import Organization, TenantSubscription, SubscriptionPlan, SubscriptionStatus
-from app.models.user import User, UserRole, FamilyMember
+from app.models.user import User, UserRole
+from app.models.family import Family, FamilyMember, FamilyRole
 from app.models.auth import RefreshToken, EmailVerification, PasswordReset
 from app.models.accounting import Account, JournalEntry, JournalLine, RecurringTransaction
 from app.models.budget import Budget, BudgetCategory, BudgetAlert, BudgetPeriod

@@ -425,13 +425,26 @@ Card 1 (Database) ✅
 
 ## Exact Recommended Next Card
 
-### Card 15: FAM-1300 — Family Finance Module
+### Card 16: FAM-1301 — Family Account Visibility and Shared/Private Data Rules
 
-**Decision:** ACC-503A completes the accounting safety gap left by BILL-801A. The next recommended card should move into the family finance model because `FamilyMember` currently exists only as a partial identity-adjacent model, with no full family/household finance module, shared/private account behavior, or invitation workflow.
+**Decision:** FAM-1300 established the family profile, member roles, and permission matrix. The next logical step is to enforce those permissions against real financial data by implementing shared/private account visibility rules and wiring the permission matrix into account/transaction reads.
 
-**What to tell the coding agent for FAM-1300:**
+**What to tell the coding agent for FAM-1301:**
 
-> "Implement FAM-1300: Build the family finance module foundation. Define family/household relationships, roles, visibility rules, invitation flow integration, shared vs private financial data behavior, RLS-safe service methods, and focused tests."
+> "Implement FAM-1301: Enforce family role permissions on accounts and transactions. Add shared/private account visibility flags, allow heads/parents to share or hide accounts per member, and ensure teen/child/viewer scopes cannot see data beyond their role. Keep RLS active and add focused tests."
+
+---
+
+## Completed Card 15
+
+### Card 15: FAM-1300 — Family Finance Module Foundation DONE
+
+- Created `Family` and `FamilyMember` models with `FamilyRole` enum.
+- Added `/family`, `/family/members`, and `/family/permissions` endpoints.
+- Auto-creates the creator as family head.
+- Added role-based permission matrix (head/parent/adult/teen/child/viewer).
+- Alembic revision `417e4cf19e63` with RLS + FORCE RLS on `families` and `family_members`.
+- Added 14 integration tests; full suite 173 passed, 1 skipped.
 
 ---
 

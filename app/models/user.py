@@ -54,22 +54,3 @@ class User(Base, TimestampMixin):
     family_members = relationship("FamilyMember", back_populates="user", lazy="selectin")
 
 
-class FamilyMember(Base, TimestampMixin):
-    """A family member linked to a user."""
-    __tablename__ = "family_members"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    email = Column(String(255), nullable=False)
-    first_name = Column(String(100), nullable=False)
-    last_name = Column(String(100), nullable=False)
-    relationship_type = Column(String(50), nullable=False)  # spouse, child, parent, etc.
-    role = Column(SQLEnum(UserRole), default=UserRole.VIEWER, nullable=False)
-    
-    # Invitation
-    invitation_token = Column(String(255), nullable=True)
-    invitation_sent_at = Column(DateTime, nullable=True)
-    invitation_accepted_at = Column(DateTime, nullable=True)
-    is_active = Column(Boolean, default=False, nullable=False)
-    
-    user = relationship("User", back_populates="family_members")

@@ -91,7 +91,8 @@
 | BDG-1000 to BDG-1003 | Budgets | Partial (models, routes, service exist) |
 | DB-1100 to DB-1105 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI; Partial for remaining dashboard widgets |
 | AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client; Partial for remaining AI engines (health score, chat, what-if, orchestrator exist but not all wired to LLM) |
-| FAM-1300 to FAM-1305 | Family Finance | Partial (FamilyMember model only) |
+| FAM-1300 | Family Finance Foundation | **Done** |
+| FAM-1301 to FAM-1305 | Family Finance (visibility, invitations, allowances, chores, reports) | Partial |
 | GOAL-1400 to GOAL-1402 | Goals | Partial (models, routes, service exist) |
 | LOAN-1500 to LOAN-1505 | Loans | Partial (models, routes, service exist) |
 | NOTIF-1600 to NOTIF-1604 | Notifications | **Done** for NOTIF-1600 (email backend, reminder generation, CRUD/preferences routes, tests); Partial for remaining notification channels |
@@ -137,7 +138,7 @@
 
 ## Latest Completed Card
 
-**ACC-503A - Journal Entry Reversal Support** is complete. Posted journal entries are never deleted for undo flows; reversals now create balanced reversing entries through `AccountingService`, prevent duplicate reversals, and allow bill/subscription payment reversal while preserving tenant isolation.
+**FAM-1300 - Family Finance Module Foundation** is complete. Tenants can create a family profile, add members with head/parent/adult/teen/child/viewer roles, and retrieve role-based permission flags. All family data is tenant-scoped with RLS + FORCE RLS enforced.
 
 ---
 
