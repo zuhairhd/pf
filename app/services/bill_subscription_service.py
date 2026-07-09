@@ -9,10 +9,11 @@ from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 
-from app.models import Account, Bill, JournalEntry, Subscription
+from app.models import Account, Bill, JournalEntry, Subscription, User
 from app.models.subscription import SubscriptionStatus
 from app.schemas.accounting import JournalEntryCreate, JournalLineCreate
 from app.services.accounting_service import AccountingService
+from app.services.family_account_access_service import FamilyAccountAccessService
 
 
 FREQUENCY_DAYS = {
@@ -191,7 +192,7 @@ class BillService:
         await self.db.commit()
         return entry
 
-    async def mark_paid(self, bill: Bill, data: Optional[dict] = None) -> Bill:
+    async def mark_paid(self, bill: Bill, data: Optional[dict] = None, user: Optional[User] = None) -> Bill:
         """Mark a bill as paid and post a balanced journal entry.
 
         Idempotent: if ``payment_journal_entry_id`` is already set, the existing
@@ -217,6 +218,13 @@ class BillService:
         if expense_account is None:
             raise ValueError("Expense account not found")
         self._validate_expense_account(expense_account)
+
+        if user is not None:
+            access = FamilyAccountAccessService(self.db, self.tenant_id, user)
+            if not await access.can_use_account_for_posting(payment_account):
+                raise ValueError("You do not have permission to use the payment account")
+            if not await access.can_use_account_for_posting(expense_account):
+                raise ValueError("You do not have permission to use the expense account")
 
         payment_date = data.get("payment_date")
         if isinstance(payment_date, str):
@@ -420,7 +428,7 @@ class SubscriptionService:
         await self.db.commit()
         return entry
 
-    async def mark_paid(self, subscription: Subscription, data: Optional[dict] = None) -> Subscription:
+    async def mark_paid(self, subscription: Subscription, data: Optional[dict] = None, user: Optional[User] = None) -> Subscription:
         """Record that the latest renewal has been paid, post a journal entry, and advance billing.
 
         Idempotent: if ``payment_journal_entry_id`` is already set, the existing
@@ -447,6 +455,13 @@ class SubscriptionService:
         if expense_account is None:
             raise ValueError("Expense account not found")
         self._validate_expense_account(expense_account)
+
+        if user is not None:
+            access = FamilyAccountAccessService(self.db, self.tenant_id, user)
+            if not await access.can_use_account_for_posting(payment_account):
+                raise ValueError("You do not have permission to use the payment account")
+            if not await access.can_use_account_for_posting(expense_account):
+                raise ValueError("You do not have permission to use the expense account")
 
         payment_date = data.get("payment_date")
         if isinstance(payment_date, str):

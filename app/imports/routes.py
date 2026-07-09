@@ -164,7 +164,7 @@ async def confirm_import_job(
     """Confirm a previewed import and create journal entries for valid rows."""
     service = ImportService(db, tenant_id=user.organization_id)
     try:
-        job = await service.confirm_job(job_id, payload)
+        job = await service.confirm_job(job_id, payload, user)
     except ImportServiceError as exc:
         raise HTTPException(status_code=400, detail=exc.message) from exc
 

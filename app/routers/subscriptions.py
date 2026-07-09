@@ -166,7 +166,7 @@ async def mark_subscription_paid(
         raise HTTPException(status_code=404, detail="Subscription not found")
     data = payload.model_dump(exclude_unset=True) if payload else {}
     try:
-        subscription = await service.mark_paid(subscription, data)
+        subscription = await service.mark_paid(subscription, data, user=user)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return _to_response(subscription)

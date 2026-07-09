@@ -12,49 +12,162 @@ from app.models import User
 from app.schemas.accounting import (
     AccountCreate,
     AccountUpdate,
+    AccountResponse,
+    AccountVisibilityUpdate,
+    AccountOwnerUpdate,
     JournalEntryCreate,
     JournalEntryReverseLine,
     JournalEntryReverseRequest,
     JournalEntryReverseResponse,
 )
 from app.services.accounting_service import AccountingService
+from app.services.family_account_access_service import FamilyAccountAccessService
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 
 
-@router.get("/", response_class=HTMLResponse)
-async def accounts_list(request: Request, db: AsyncSession = Depends(get_db)):
-    """Chart of accounts page."""
-    tenant_id = getattr(request.state, "tenant_id", None)
-    if not tenant_id:
-        return templates.TemplateResponse("auth/login.html", {"request": request})
-    
-    result = await db.execute(
-        select(Account).where(Account.tenant_id == tenant_id).order_by(Account.code)
+def _to_response(account: Account) -> AccountResponse:
+    return AccountResponse(
+        id=account.id,
+        tenant_id=account.tenant_id,
+        code=account.code,
+        name=account.name,
+        account_type=account.account_type,
+        parent_account_id=account.parent_account_id,
+        description=account.description,
+        is_active=account.is_active,
+        is_bank_account=account.is_bank_account,
+        is_cash_account=account.is_cash_account,
+        is_credit_card=account.is_credit_card,
+        visibility=account.visibility,
+        owner_user_id=account.owner_user_id,
+        family_id=account.family_id,
+        created_at=account.created_at,
+        updated_at=account.updated_at,
     )
-    accounts = result.scalars().all()
-    
+
+
+@router.get("/", response_class=HTMLResponse)
+async def accounts_list(
+    request: Request,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Chart of accounts page, filtered by family visibility rules."""
+    access = FamilyAccountAccessService(db, user.organization_id, user)
+    accounts = await access.list_visible_accounts()
+
     return templates.TemplateResponse("accounts/list.html", {
         "request": request,
         "accounts": accounts,
     })
 
 
-@router.post("/")
+@router.post("/", response_model=AccountResponse)
 async def create_account(
     account: AccountCreate,
-    request: Request,
     db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
 ):
     """Create a new account."""
-    tenant_id = getattr(request.state, "tenant_id", None)
-    if not tenant_id:
-        raise HTTPException(status_code=403, detail="Not authenticated")
-
-    service = AccountingService(db, tenant_id)
+    service = AccountingService(db, user.organization_id)
     new_account = await service.create_account(account)
-    return new_account
+    return _to_response(new_account)
+
+
+@router.get("/{account_id}", response_model=AccountResponse)
+async def get_account(
+    account_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Get a single account if the user is allowed to view it."""
+    access = FamilyAccountAccessService(db, user.organization_id, user)
+    result = await db.execute(
+        select(Account).where(Account.id == account_id, Account.tenant_id == user.organization_id)
+    )
+    account = result.scalar_one_or_none()
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    if not await access.can_view_account(account):
+        raise HTTPException(status_code=403, detail="Access denied")
+    return _to_response(account)
+
+
+@router.patch("/{account_id}", response_model=AccountResponse)
+async def update_account(
+    account_id: int,
+    payload: AccountUpdate,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Update basic account fields the user is allowed to manage."""
+    access = FamilyAccountAccessService(db, user.organization_id, user)
+    result = await db.execute(
+        select(Account).where(Account.id == account_id, Account.tenant_id == user.organization_id)
+    )
+    account = result.scalar_one_or_none()
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    if not await access.can_manage_account(account):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    data = payload.model_dump(exclude_unset=True)
+    for field in ("name", "description", "is_active"):
+        if field in data:
+            setattr(account, field, data[field])
+    await db.commit()
+    await db.refresh(account)
+    return _to_response(account)
+
+
+@router.patch("/{account_id}/visibility", response_model=AccountResponse)
+async def update_account_visibility(
+    account_id: int,
+    payload: AccountVisibilityUpdate,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Change account visibility (private/shared/family)."""
+    access = FamilyAccountAccessService(db, user.organization_id, user)
+    result = await db.execute(
+        select(Account).where(Account.id == account_id, Account.tenant_id == user.organization_id)
+    )
+    account = result.scalar_one_or_none()
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    if not await access.can_manage_account(account):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    account.visibility = payload.visibility
+    await db.commit()
+    await db.refresh(account)
+    return _to_response(account)
+
+
+@router.patch("/{account_id}/owner", response_model=AccountResponse)
+async def update_account_owner(
+    account_id: int,
+    payload: AccountOwnerUpdate,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Assign or remove an account owner."""
+    access = FamilyAccountAccessService(db, user.organization_id, user)
+    result = await db.execute(
+        select(Account).where(Account.id == account_id, Account.tenant_id == user.organization_id)
+    )
+    account = result.scalar_one_or_none()
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    if not await access.can_manage_account(account):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    account.owner_user_id = payload.owner_user_id
+    await db.commit()
+    await db.refresh(account)
+    return _to_response(account)
 
 
 @router.post(

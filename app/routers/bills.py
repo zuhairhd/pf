@@ -164,7 +164,7 @@ async def mark_bill_paid(
         raise HTTPException(status_code=404, detail="Bill not found")
     data = payload.model_dump(exclude_unset=True) if payload else {}
     try:
-        bill = await service.mark_paid(bill, data)
+        bill = await service.mark_paid(bill, data, user=user)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return _to_response(bill)

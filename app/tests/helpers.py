@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import func, select, text
@@ -147,3 +148,58 @@ async def count_rows(
         stmt = stmt.where(*filters)
     result = await db.execute(stmt)
     return result.scalar() or 0
+
+
+async def create_test_account(
+    db: AsyncSession,
+    tenant_id: int,
+    *,
+    code: Optional[str] = None,
+    name: Optional[str] = None,
+    account_type: str = "Asset",
+    visibility: str = "private",
+    owner_user_id: Optional[int] = None,
+) -> "Account":
+    """Create a tenant-scoped account for tests."""
+    from app.models import Account
+
+    account = Account(
+        tenant_id=tenant_id,
+        code=code or unique("acct"),
+        name=name or unique("Account"),
+        account_type=account_type,
+        visibility=visibility,
+        owner_user_id=owner_user_id,
+    )
+    db.add(account)
+    await db.flush()
+    await db.refresh(account)
+    return account
+
+
+async def create_test_family_member(
+    db: AsyncSession,
+    family_id: int,
+    tenant_id: int,
+    user: "User",
+    role: str,
+) -> "FamilyMember":
+    """Create an active family member linking a user to a family."""
+    from app.models import FamilyMember
+
+    member = FamilyMember(
+        family_id=family_id,
+        tenant_id=tenant_id,
+        user_id=user.id,
+        email=user.email,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        relationship_type="other",
+        role=role,
+        is_active=True,
+        invitation_accepted_at=datetime.utcnow(),
+    )
+    db.add(member)
+    await db.flush()
+    await db.refresh(member)
+    return member

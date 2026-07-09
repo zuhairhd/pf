@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional, List
 
@@ -13,12 +13,47 @@ class AccountCreate(BaseModel):
     is_bank_account: bool = False
     is_cash_account: bool = False
     is_credit_card: bool = False
+    visibility: Optional[str] = Field(default="private", pattern="^(private|shared|family)$")
+    owner_user_id: Optional[int] = None
+    family_id: Optional[int] = None
 
 
 class AccountUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     is_active: Optional[bool] = None
+    visibility: Optional[str] = Field(default=None, pattern="^(private|shared|family)$")
+    owner_user_id: Optional[int] = None
+    family_id: Optional[int] = None
+
+
+class AccountVisibilityUpdate(BaseModel):
+    visibility: str = Field(..., pattern="^(private|shared|family)$")
+
+
+class AccountOwnerUpdate(BaseModel):
+    owner_user_id: Optional[int] = None
+
+
+class AccountResponse(BaseModel):
+    id: int
+    tenant_id: int
+    code: str
+    name: str
+    account_type: str
+    parent_account_id: Optional[int] = None
+    description: Optional[str] = None
+    is_active: bool
+    is_bank_account: bool
+    is_cash_account: bool
+    is_credit_card: bool
+    visibility: str
+    owner_user_id: Optional[int] = None
+    family_id: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class JournalLineCreate(BaseModel):

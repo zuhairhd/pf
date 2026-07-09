@@ -18,6 +18,7 @@ from app.imports.schemas import ColumnMapping, ImportConfirmRequest
 from app.models import Account, JournalEntry, JournalLine, User
 from app.schemas.accounting import JournalEntryCreate, JournalLineCreate
 from app.services.accounting_service import AccountingService
+from app.services.family_account_access_service import FamilyAccountAccessService
 
 
 class ImportServiceError(Exception):
@@ -235,7 +236,7 @@ class ImportService:
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
-    async def confirm_job(self, job_id: int, payload: ImportConfirmRequest) -> ImportJob:
+    async def confirm_job(self, job_id: int, payload: ImportConfirmRequest, user: User) -> ImportJob:
         """Import valid, non-duplicate rows as journal entries."""
         job = await self.get_job(job_id)
         if job is None:
@@ -248,6 +249,7 @@ class ImportService:
             raise ImportServiceError("No valid rows available to import")
 
         accounting = AccountingService(self.db, self.tenant_id)
+        access_service = FamilyAccountAccessService(self.db, self.tenant_id, user)
 
         imported_count = 0
         skipped_count = 0
@@ -255,14 +257,17 @@ class ImportService:
         for row in rows:
             try:
                 entry = await self._create_journal_entry_for_row(
-                    row, accounting, payload
+                    row, accounting, payload, access_service
                 )
                 row.status = "imported"
                 row.parsed_data["journal_entry_id"] = entry.id
                 imported_count += 1
             except ImportServiceError as exc:
                 row.status = "invalid"
-                row.validation_errors.append(str(exc))
+                row.validation_errors = [
+                    *(row.validation_errors or []),
+                    str(exc),
+                ]
                 skipped_count += 1
 
         job.imported_rows = imported_count
@@ -292,6 +297,7 @@ class ImportService:
         row: ImportedRow,
         accounting: AccountingService,
         payload: ImportConfirmRequest,
+        access_service: FamilyAccountAccessService,
     ) -> JournalEntry:
         """Convert a valid imported row into a journal entry."""
         parsed = row.parsed_data
@@ -304,6 +310,8 @@ class ImportService:
         bank_account = await self._get_account(payload.bank_account_id)
         if bank_account is None:
             raise ImportServiceError("Bank account not found")
+        if not await access_service.can_use_account_for_posting(bank_account):
+            raise ImportServiceError("You do not have permission to use the selected bank account")
 
         if txn_type == "expense":
             category_account = await self._resolve_category_account(
@@ -314,6 +322,8 @@ class ImportService:
                 raise ImportServiceError(
                     "Could not resolve expense category account for this row"
                 )
+            if not await access_service.can_use_account_for_posting(category_account):
+                raise ImportServiceError("You do not have permission to use the selected expense account")
             lines = [
                 JournalLineCreate(
                     account_id=category_account.id,
@@ -337,6 +347,8 @@ class ImportService:
                 raise ImportServiceError(
                     "Could not resolve income category account for this row"
                 )
+            if not await access_service.can_use_account_for_posting(category_account):
+                raise ImportServiceError("You do not have permission to use the selected income account")
             lines = [
                 JournalLineCreate(
                     account_id=bank_account.id,

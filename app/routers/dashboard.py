@@ -262,7 +262,7 @@ async def mark_bill_paid_partial(
     payment_error = None
     status_code = 200
     try:
-        await bill_service.mark_paid(bill)
+        await bill_service.mark_paid(bill, user=user)
     except ValueError as exc:
         payment_error = str(exc)
         status_code = 400

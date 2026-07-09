@@ -423,15 +423,42 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 16
+
+### Card 16: FAM-1301 — Family Account Visibility and Shared/Private Data Rules ✅ DONE
+
+**PLAN_V2 Reference:** FAM-1301 (Shared and Private Accounts)
+**Type:** Feature / Security
+**Priority:** HIGH
+
+**Completed:**
+- Added `visibility` (`private`/`shared`/`family`), `owner_user_id`, and `family_id` columns to `accounts`.
+- Created Alembic migration `00255deeb189` with safe defaults and indexes.
+- Created `FamilyAccountAccessService` with role-based view/manage/post rules.
+- Updated `/accounts/*` routes to filter list/detail by visibility and added visibility/owner endpoints.
+- Added `/family/accounts/visible`, `/family/accounts/{id}/share`, and `/family/accounts/{id}/make-private`.
+- Protected bill/subscription `mark_paid` and import `confirm` against accounts the user cannot access.
+- Added 11 integration tests for visibility rules, management permissions, posting/import safety, tenant isolation, and RLS.
+- Full test suite: **184 passed, 1 skipped**.
+
+**Remaining:**
+- Transaction-level privacy is not implemented.
+- `family` visibility is treated equivalently to `shared`; refine semantics later if needed.
+- Family invitation/activation flow still requires manual PATCH.
+
+**Test results:** 184 passed, 1 skipped
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 16: FAM-1301 — Family Account Visibility and Shared/Private Data Rules
+### Card 17: FAM-1302 — Family Goals
 
-**Decision:** FAM-1300 established the family profile, member roles, and permission matrix. The next logical step is to enforce those permissions against real financial data by implementing shared/private account visibility rules and wiring the permission matrix into account/transaction reads.
+**Decision:** Account visibility rules are now enforced. The next logical step is to extend family scoping to goals so family members can collaborate on shared goals while keeping private goals isolated.
 
-**What to tell the coding agent for FAM-1301:**
+**What to tell the coding agent for FAM-1302:**
 
-> "Implement FAM-1301: Enforce family role permissions on accounts and transactions. Add shared/private account visibility flags, allow heads/parents to share or hide accounts per member, and ensure teen/child/viewer scopes cannot see data beyond their role. Keep RLS active and add focused tests."
+> "Implement FAM-1302: Family Goals. Allow goals to be owned by a family, shared with specific roles, or private to a member. Ensure head/parent can create shared family goals, adults can create own goals, and teen/child/viewer visibility follows the existing family access rules. Reuse the existing Goal model where possible and add focused tests. Keep RLS active."
 
 ---
 

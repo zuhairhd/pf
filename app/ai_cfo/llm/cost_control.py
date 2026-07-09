@@ -27,8 +27,8 @@ class CostController:
         self.settings = get_settings()
 
     async def get_daily_usage(self, request_date: Optional[date] = None) -> int:
-        """Return the number of LLM requests made by this tenant today."""
-        request_date = request_date or date.today()
+        """Return the number of LLM requests made by this tenant today (UTC)."""
+        request_date = request_date or datetime.utcnow().date()
         start = datetime.combine(request_date, datetime.min.time())
         end = start + timedelta(days=1)
 

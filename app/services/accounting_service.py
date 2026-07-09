@@ -28,6 +28,9 @@ class AccountingService:
             is_bank_account=account_data.is_bank_account,
             is_cash_account=account_data.is_cash_account,
             is_credit_card=account_data.is_credit_card,
+            visibility=account_data.visibility or "private",
+            owner_user_id=account_data.owner_user_id,
+            family_id=account_data.family_id,
         )
         self.db.add(account)
         await self.db.commit()

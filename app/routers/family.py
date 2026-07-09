@@ -6,9 +6,10 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.core.security import get_db_with_tenant_context, require_tenant_member
-from app.models import User
+from app.models import User, Account
 from app.schemas.family import (
     FamilyCreate,
     FamilyResponse,
@@ -18,7 +19,9 @@ from app.schemas.family import (
     FamilyMemberUpdate,
     FamilyPermissionsResponse,
 )
+from app.schemas.accounting import AccountResponse
 from app.services.family_service import FamilyService, FamilyServiceError
+from app.services.family_account_access_service import FamilyAccountAccessService
 
 
 router = APIRouter(prefix="/family", tags=["Family"])
@@ -180,3 +183,86 @@ async def get_family_permissions(
     service = _service(db, user)
     perms = await service.get_permissions()
     return FamilyPermissionsResponse(**perms)
+
+
+def _to_account_response(account: Account) -> AccountResponse:
+    return AccountResponse(
+        id=account.id,
+        tenant_id=account.tenant_id,
+        code=account.code,
+        name=account.name,
+        account_type=account.account_type,
+        parent_account_id=account.parent_account_id,
+        description=account.description,
+        is_active=account.is_active,
+        is_bank_account=account.is_bank_account,
+        is_cash_account=account.is_cash_account,
+        is_credit_card=account.is_credit_card,
+        visibility=account.visibility,
+        owner_user_id=account.owner_user_id,
+        family_id=account.family_id,
+        created_at=account.created_at,
+        updated_at=account.updated_at,
+    )
+
+
+@router.get("/accounts/visible", response_model=list[AccountResponse])
+async def list_visible_family_accounts(
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """List accounts the current user is allowed to see."""
+    access = FamilyAccountAccessService(db, user.organization_id, user)
+    accounts = await access.list_visible_accounts()
+    return [_to_account_response(a) for a in accounts]
+
+
+async def _get_manageable_account(
+    account_id: int,
+    db: AsyncSession,
+    user: User,
+) -> Account:
+    """Fetch an account and enforce family management permission."""
+    access = FamilyAccountAccessService(db, user.organization_id, user)
+    result = await db.execute(
+        select(Account).where(
+            Account.id == account_id,
+            Account.tenant_id == user.organization_id,
+        )
+    )
+    account = result.scalar_one_or_none()
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    if not await access.can_manage_account(account):
+        raise HTTPException(status_code=403, detail="Access denied")
+    return account
+
+
+@router.post("/accounts/{account_id}/share", response_model=AccountResponse)
+async def share_family_account(
+    account_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Make an account shared with the family."""
+    account = await _get_manageable_account(account_id, db, user)
+    account.visibility = "shared"
+    await db.commit()
+    await db.refresh(account)
+    return _to_account_response(account)
+
+
+@router.post("/accounts/{account_id}/make-private", response_model=AccountResponse)
+async def make_family_account_private(
+    account_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Make an account private. Ownership falls to the current user if unset."""
+    account = await _get_manageable_account(account_id, db, user)
+    account.visibility = "private"
+    if account.owner_user_id is None:
+        account.owner_user_id = user.id
+    await db.commit()
+    await db.refresh(account)
+    return _to_account_response(account)

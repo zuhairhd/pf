@@ -1,16 +1,24 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Numeric, ForeignKey, Text, Date
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Numeric, ForeignKey, Text, Date, Index
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from decimal import Decimal
+import enum
 
 from app.models.database import Base
 from app.models.mixins import TimestampMixin, TenantMixin
 
 
+class AccountVisibility(str, enum.Enum):
+    """Visibility level for a family account."""
+    PRIVATE = "private"
+    SHARED = "shared"
+    FAMILY = "family"
+
+
 class Account(Base, TimestampMixin, TenantMixin):
     """Chart of accounts entry."""
     __tablename__ = "accounts"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     code = Column(String(20), nullable=False)
     name = Column(String(200), nullable=False)
@@ -21,13 +29,26 @@ class Account(Base, TimestampMixin, TenantMixin):
     is_bank_account = Column(Boolean, default=False, nullable=False)
     is_cash_account = Column(Boolean, default=False, nullable=False)
     is_credit_card = Column(Boolean, default=False, nullable=False)
-    
+
+    # Family visibility and ownership
+    visibility = Column(
+        String(20),
+        default=AccountVisibility.PRIVATE.value,
+        nullable=False,
+        index=True,
+    )
+    owner_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    family_id = Column(Integer, ForeignKey("families.id"), nullable=True, index=True)
+
     # Relationships
     parent = relationship("Account", remote_side="Account.id", backref="children")
     journal_lines = relationship("JournalLine", back_populates="account")
-    
+    owner = relationship("User", foreign_keys=[owner_user_id])
+    family = relationship("Family", foreign_keys=[family_id])
+
     __table_args__ = (
-        # Unique constraint on code per tenant
+        Index("ix_accounts_tenant_visibility", "tenant_id", "visibility"),
+        Index("ix_accounts_tenant_owner", "tenant_id", "owner_user_id"),
         {"sqlite_autoincrement": True},
     )
 
