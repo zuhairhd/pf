@@ -1,0 +1,15 @@
+{% if family_goals.goals %}
+    {% for goal in family_goals.goals %}
+        {% include "dashboard/partials/family_goal_card.html" %}
+    {% endfor %}
+{% else %}
+    <div class="text-center py-4">
+        <i class="bi bi-bullseye fs-1 text-muted mb-3"></i>
+        {% if family_goals.permissions and family_goals.permissions.can_create_goal %}
+            <p class="text-muted">No active family goals yet. Create your first shared or private goal.</p>
+            <a href="/family/goals" class="btn btn-success btn-sm">Create Goal</a>
+        {% else %}
+            <p class="text-muted">No goals are visible to you right now.</p>
+        {% endif %}
+    </div>
+{% endif %}

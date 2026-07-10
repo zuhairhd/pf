@@ -1,0 +1,64 @@
+<div class="goal-card mb-3 p-3 border rounded bg-light">
+    <div class="d-flex justify-content-between align-items-start mb-2">
+        <div>
+            <h6 class="mb-1">{{ goal.name }}</h6>
+            <span class="badge bg-{% if goal.visibility == 'private' %}secondary{% elif goal.visibility == 'family' %}info{% else %}success{% endif %}">
+                {{ goal.visibility }}
+            </span>
+            <span class="badge bg-{% if goal.status == 'active' %}primary{% elif goal.status == 'completed' %}success{% else %}warning{% endif %}">
+                {{ goal.status }}
+            </span>
+            {% if goal.target_date %}
+            <small class="text-muted ms-2">Target: {{ goal.target_date }}</small>
+            {% endif %}
+        </div>
+        <div class="text-end">
+            <small class="text-muted">{{ currency }} {{ "%.3f"|format(goal.current_amount) }} / {{ currency }} {{ "%.3f"|format(goal.target_amount) }}</small>
+        </div>
+    </div>
+
+    <div class="progress mb-2" style="height: 20px;">
+        <div class="progress-bar {% if goal.progress_percent >= 100 %}bg-success{% elif goal.progress_percent >= 50 %}bg-info{% else %}bg-primary{% endif %}"
+             role="progressbar"
+             style="width: {{ [goal.progress_percent, 100]|min }}%;"
+             aria-valuenow="{{ goal.progress_percent }}"
+             aria-valuemin="0"
+             aria-valuemax="100">
+            {{ goal.progress_percent }}%
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center">
+        <small class="text-muted">Remaining: {{ currency }} {{ "%.3f"|format(goal.remaining_amount) }}</small>
+        <div class="d-flex gap-2">
+            {% if goal.can_contribute and goal.status == 'active' %}
+            <form class="d-flex gap-1 align-items-center"
+                  hx-post="/dashboard/partials/family-goals/{{ goal.id }}/contributions"
+                  hx-target="#family-goals-widget"
+                  hx-swap="outerHTML">
+                <input type="number" step="0.001" name="amount" class="form-control form-control-sm" style="width: 90px;" placeholder="Amount" required>
+                <input type="hidden" name="date" value="{{ today }}">
+                <button type="submit" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-plus-lg"></i> Add
+                </button>
+            </form>
+            {% endif %}
+            {% if goal.can_manage and goal.status == 'active' %}
+            <button class="btn btn-sm btn-outline-success"
+                    hx-post="/dashboard/partials/family-goals/{{ goal.id }}/complete"
+                    hx-target="#family-goals-widget"
+                    hx-swap="outerHTML"
+                    hx-confirm="Mark this goal as completed?">
+                <i class="bi bi-check-lg"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-danger"
+                    hx-post="/dashboard/partials/family-goals/{{ goal.id }}/cancel"
+                    hx-target="#family-goals-widget"
+                    hx-swap="outerHTML"
+                    hx-confirm="Cancel this goal?">
+                <i class="bi bi-x-lg"></i>
+            </button>
+            {% endif %}
+        </div>
+    </div>
+</div>

@@ -477,15 +477,44 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 18
+
+### Card 18: DB-1105A — Family Goals Dashboard Widget UI ✅ DONE
+
+**PLAN_V2 Reference:** DB-1105 (Dashboard Widgets) + FAM-1302 (Family Goals)
+**Type:** UI / Feature Completion
+**Priority:** MEDIUM-HIGH
+
+**Completed:**
+- Added `GET /dashboard/api/family-goals` returning UI-ready JSON with visible goals, progress, counts, totals, and permission flags.
+- Added HTMX partial routes:
+  - `GET /dashboard/partials/family-goals`
+  - `POST /dashboard/partials/family-goals/{goal_id}/contributions`
+  - `POST /dashboard/partials/family-goals/{goal_id}/complete`
+  - `POST /dashboard/partials/family-goals/{goal_id}/cancel`
+- Added Jinja2 + Bootstrap + HTMX templates for the widget, list, empty state, and per-goal card.
+- Updated the main dashboard template to include the family goals widget below the commitments widget.
+- Enforced family visibility rules (head/parent/adult/teen/child/viewer) through `FamilyGoalService`.
+- Added 9 dashboard widget integration tests covering auth, role visibility, empty state, progress calculation, quick actions, tenant isolation, and RLS.
+- Full test suite: **213 passed, 1 skipped**.
+
+**Remaining:**
+- Goal contributions do not yet create accounting entries.
+- Other dashboard widgets (net worth, cash flow, AI insights surface) are still partial.
+
+**Test results:** 213 passed, 1 skipped
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 18: DB-1105A — Family Goals Dashboard Widget UI
+### Card 19: GOAL-1401A — Goal Contributions Through Accounting Engine
 
-**Decision:** Family goals are now stored and accessible via API. The next logical step is to surface them on the dashboard so family members can see shared goal progress without navigating to a separate page.
+**Decision:** Family goals are now visible and contributions can be added from the dashboard. The next logical step is to make goal contributions create proper accounting entries through the existing double-entry engine so savings toward goals flow into the chart of accounts and net-worth calculations.
 
-**What to tell the coding agent for DB-1105A:**
+**What to tell the coding agent for GOAL-1401A:**
 
-> "Implement DB-1105A: Family Goals Dashboard Widget UI. Reuse `/family/goals` to fetch active goals for the current user and render a widget on the dashboard showing goal names, target amounts, current progress, and percentage completion. Add an HTMX partial for refreshing the widget. Keep RLS active and do not expose private goals to unauthorized family members."
+> "Implement GOAL-1401A: Goal Contributions Through Accounting Engine. When a contribution is added to a family goal (via `/family/goals/{id}/contributions` or the dashboard partial), optionally create a balanced journal entry through `AccountingService`. Debit the selected source/payment account and credit a liability/equity goal-tracking account. Validate that the user can access the selected account. Keep RLS active and do not bypass the accounting engine."
 
 ---
 

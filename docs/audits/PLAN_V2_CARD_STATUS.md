@@ -89,7 +89,7 @@
 | SUB-900 to SUB-901 | Subscriptions | **Done** (`app/routers/subscriptions.py`, CRUD, mark-paid payment posting through `AccountingService`, payment reversal support, pause/cancel/activate, renewals, equivalent amounts, tests) |
 | ACC-503A | Journal Entry Reversal Support | **Done** (`AccountingService.reverse_journal_entry`, reversal metadata, bill/subscription reversal integration, tests) |
 | BDG-1000 to BDG-1003 | Budgets | Partial (models, routes, service exist) |
-| DB-1100 to DB-1105 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI; Partial for remaining dashboard widgets |
+| DB-1100 to DB-1105 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI and DB-1105A family goals widget UI; Partial for remaining dashboard widgets |
 | AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client; Partial for remaining AI engines (health score, chat, what-if, orchestrator exist but not all wired to LLM) |
 | FAM-1300 | Family Finance Foundation | **Done** |
 | FAM-1301 | Family Account Visibility and Shared/Private Data Rules | **Done** |
@@ -140,7 +140,7 @@
 
 ## Latest Completed Card
 
-**FAM-1302 - Family Goals** is complete. Goals now support family scoping, `private`/`shared`/`family` visibility, owner tracking, role-based access, contributions, and progress tracking. All data remains tenant-scoped with RLS + FORCE RLS enforced.
+**DB-1105A - Family Goals Dashboard Widget UI** is complete. The dashboard now surfaces family goals with progress bars, summary cards, permission-aware quick actions (add contribution, complete, cancel), HTMX refresh, empty states, and tenant/RLS safety. No new migration was required.
 
 ---
 

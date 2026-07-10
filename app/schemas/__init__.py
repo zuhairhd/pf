@@ -11,6 +11,8 @@ from app.schemas.goal import (
     GoalResponse,
     GoalContributionResponse,
     GoalProgressResponse,
+    DashboardFamilyGoalItem,
+    FamilyGoalsDashboardResponse,
 )
 from app.schemas.loan import LoanCreate, LoanPaymentCreate
 from app.schemas.ai import ChatRequest, ChatResponse, WhatIfRequest, WhatIfResponse

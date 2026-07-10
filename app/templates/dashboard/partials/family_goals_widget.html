@@ -1,0 +1,72 @@
+<div id="family-goals-widget" class="family-goals-widget">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h6 class="mb-0">
+            <i class="bi bi-bullseye text-success me-2"></i>
+            Family Goals
+        </h6>
+        <div class="d-flex gap-2 align-items-center">
+            {% if family_goals.permissions and family_goals.permissions.can_create_goal %}
+            <a href="/family/goals" class="btn btn-sm btn-outline-success">
+                <i class="bi bi-plus-lg me-1"></i> New Goal
+            </a>
+            {% endif %}
+            <button
+                class="btn btn-sm btn-outline-secondary"
+                hx-get="/dashboard/partials/family-goals"
+                hx-target="#family-goals-widget"
+                hx-swap="outerHTML"
+            >
+                <i class="bi bi-arrow-clockwise"></i>
+            </button>
+        </div>
+    </div>
+
+    <div class="card-body">
+        {% if action_error %}
+        <div class="alert alert-warning py-2 mb-3" role="alert">
+            {{ action_error }}
+        </div>
+        {% endif %}
+
+        <!-- Summary Row -->
+        <div class="row g-3 mb-4">
+            <div class="col-sm-6 col-lg-3">
+                <div class="stat-card stat-card-sm">
+                    <p class="card-label text-muted mb-1">Active Goals</p>
+                    <h5 class="card-value mb-0">{{ family_goals.active_goals_count }}</h5>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <div class="stat-card stat-card-sm">
+                    <p class="card-label text-muted mb-1">Completed</p>
+                    <h5 class="card-value mb-0">{{ family_goals.completed_goals_count }}</h5>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <div class="stat-card stat-card-sm">
+                    <p class="card-label text-muted mb-1">Total Target</p>
+                    <h5 class="card-value mb-0">{{ currency }} {{ "%.3f"|format(family_goals.total_target_amount) }}</h5>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <div class="stat-card stat-card-sm">
+                    <p class="card-label text-muted mb-1">Avg Progress</p>
+                    <h5 class="card-value mb-0">{{ family_goals.average_progress_percent }}%</h5>
+                </div>
+            </div>
+        </div>
+
+        <!-- Goals List -->
+        <div class="family-goals-list">
+            {% include "dashboard/partials/family_goals_list.html" %}
+        </div>
+
+        <!-- Total Footer -->
+        <div class="mt-4 p-3 bg-light rounded">
+            <div class="d-flex justify-content-between align-items-center">
+                <span class="text-muted">Saved so far</span>
+                <span class="fw-bold fs-5">{{ currency }} {{ "%.3f"|format(family_goals.total_current_amount) }}</span>
+            </div>
+        </div>
+    </div>
+</div>

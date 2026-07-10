@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 
 class GoalCreate(BaseModel):
@@ -101,3 +101,32 @@ class GoalProgressResponse(BaseModel):
     is_on_track: bool
 
     model_config = {"from_attributes": True}
+
+
+class DashboardFamilyGoalItem(BaseModel):
+    id: int
+    name: str
+    visibility: str
+    status: str
+    target_amount: float
+    current_amount: float
+    remaining_amount: float
+    progress_percent: float
+    target_date: Optional[date] = None
+    owner_user_id: Optional[int] = None
+    family_id: Optional[int] = None
+    can_view: bool
+    can_manage: bool
+    can_contribute: bool
+
+
+class FamilyGoalsDashboardResponse(BaseModel):
+    goals: List[DashboardFamilyGoalItem]
+    active_goals_count: int
+    completed_goals_count: int
+    total_target_amount: float
+    total_current_amount: float
+    total_remaining_amount: float
+    average_progress_percent: float
+    currency: str
+    permissions: Dict[str, bool]
