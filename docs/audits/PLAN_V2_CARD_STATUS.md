@@ -22,7 +22,7 @@
 | PF-007 | Define Normal User View vs Accountant View | **Partial** | Accounts router shows COA; no accountant toggle | No "Accountant View" mode, no hidden accounting | Add view mode toggle and hide COA from normal users |
 | PF-008 | Define Import Strategy (Manual, CSV, Excel, SMS) | **Done** | `app/imports/` module created, CSV + SMS parsers, upload/preview/confirm endpoints, Alembic `9ee380da96d5` | Excel parser not yet implemented | Implement IMP-701 (Excel) |
 | PF-009 | Define MVP User Journey | **Unknown** | No documentation found | No user journey document | Write `docs/product/mvp-journey.md` |
-| PF-010 | Define Family Finance Model | **Partial** | `Family` and `FamilyMember` models exist with roles and shared/private account logic | Allowance/chore tracking, family dashboard not implemented | Continue with FAM-1302+ |
+| PF-010 | Define Family Finance Model | **Partial** | `Family`, `FamilyMember`, and family-scoped `Goal` models exist with roles, shared/private account logic, and goal visibility | Allowance/chore tracking, family dashboard not implemented | Continue with DB-1105A+ |
 | PF-011 | Write PLAN_V2.md | **Done** | `PLAN_V2.md` exists at project root | — | — |
 | PF-012 | Setup Development Environment | **Done** | Python, FastAPI, SQLAlchemy, PostgreSQL driver installed | Python 3.10 (not 3.11+), PostgreSQL 14 (not 15+) | Acceptable for now; upgrade later |
 | PF-013 | Create Project Skeleton and Folder Structure | **Should Refactor** | Flat structure exists | Not modular monolith per PLAN_V2.md | Create `app/core/`; gradually migrate |
@@ -93,7 +93,8 @@
 | AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client; Partial for remaining AI engines (health score, chat, what-if, orchestrator exist but not all wired to LLM) |
 | FAM-1300 | Family Finance Foundation | **Done** |
 | FAM-1301 | Family Account Visibility and Shared/Private Data Rules | **Done** |
-| FAM-1302 to FAM-1305 | Family Finance (goals, budgets, allowances, chores, dashboard) | Partial |
+| FAM-1302 | Family Goals | **Done** |
+| FAM-1303 to FAM-1305 | Family Finance (budgets, allowances, chores, dashboard) | Partial |
 | GOAL-1400 to GOAL-1402 | Goals | Partial (models, routes, service exist) |
 | LOAN-1500 to LOAN-1505 | Loans | Partial (models, routes, service exist) |
 | NOTIF-1600 to NOTIF-1604 | Notifications | **Done** for NOTIF-1600 (email backend, reminder generation, CRUD/preferences routes, tests); Partial for remaining notification channels |
@@ -139,7 +140,7 @@
 
 ## Latest Completed Card
 
-**FAM-1301 - Family Account Visibility and Shared/Private Data Rules** is complete. Accounts now support `private`/`shared`/`family` visibility, optional ownership, and family role-based access. Bills, subscriptions, and imports check account access before posting. All data remains tenant-scoped with RLS + FORCE RLS enforced.
+**FAM-1302 - Family Goals** is complete. Goals now support family scoping, `private`/`shared`/`family` visibility, owner tracking, role-based access, contributions, and progress tracking. All data remains tenant-scoped with RLS + FORCE RLS enforced.
 
 ---
 

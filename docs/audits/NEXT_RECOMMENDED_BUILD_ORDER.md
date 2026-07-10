@@ -450,15 +450,42 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 17
+
+### Card 17: FAM-1302 — Family Goals ✅ DONE
+
+**PLAN_V2 Reference:** FAM-1302 (Family Goals)
+**Type:** Feature / Family Finance
+**Priority:** HIGH
+
+**Completed:**
+- Extended `goals` with `visibility` (`private`/`shared`/`family`), `owner_user_id`, and `family_id`.
+- Extended `goal_contributions` with `tenant_id`, `contributed_by_user_id`, and optional `account_id`.
+- Created Alembic migration `951f42580bfd` with safe defaults and backfilled tenant_id.
+- Created `FamilyGoalService` with role-based view/manage/contribute rules.
+- Added `/family/goals/*` endpoints for CRUD, cancel, complete, contributions, and progress.
+- Reused `FamilyAccountAccessService` to validate account access on contributions.
+- Added 17 integration tests covering auth, role visibility, contributions, progress, tenant isolation, and RLS.
+- Full test suite: **200 passed, 1 skipped**.
+
+**Remaining:**
+- Goal contributions do not yet create accounting entries (deferred to GOAL-1401A).
+- No family goals dashboard widget UI yet (deferred to DB-1105A).
+- Family invitation/activation flow still requires manual PATCH.
+
+**Test results:** 200 passed, 1 skipped
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 17: FAM-1302 — Family Goals
+### Card 18: DB-1105A — Family Goals Dashboard Widget UI
 
-**Decision:** Account visibility rules are now enforced. The next logical step is to extend family scoping to goals so family members can collaborate on shared goals while keeping private goals isolated.
+**Decision:** Family goals are now stored and accessible via API. The next logical step is to surface them on the dashboard so family members can see shared goal progress without navigating to a separate page.
 
-**What to tell the coding agent for FAM-1302:**
+**What to tell the coding agent for DB-1105A:**
 
-> "Implement FAM-1302: Family Goals. Allow goals to be owned by a family, shared with specific roles, or private to a member. Ensure head/parent can create shared family goals, adults can create own goals, and teen/child/viewer visibility follows the existing family access rules. Reuse the existing Goal model where possible and add focused tests. Keep RLS active."
+> "Implement DB-1105A: Family Goals Dashboard Widget UI. Reuse `/family/goals` to fetch active goals for the current user and render a widget on the dashboard showing goal names, target amounts, current progress, and percentage completion. Add an HTMX partial for refreshing the widget. Keep RLS active and do not expose private goals to unauthorized family members."
 
 ---
 

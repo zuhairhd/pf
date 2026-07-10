@@ -20,7 +20,16 @@ from app.schemas.family import (
     FamilyPermissionsResponse,
 )
 from app.schemas.accounting import AccountResponse
+from app.schemas.goal import (
+    FamilyGoalCreate,
+    FamilyGoalUpdate,
+    GoalContributionCreate,
+    GoalResponse,
+    GoalContributionResponse,
+    GoalProgressResponse,
+)
 from app.services.family_service import FamilyService, FamilyServiceError
+from app.services.family_goal_service import FamilyGoalService, FamilyGoalServiceError
 from app.services.family_account_access_service import FamilyAccountAccessService
 
 
@@ -266,3 +275,200 @@ async def make_family_account_private(
     await db.commit()
     await db.refresh(account)
     return _to_account_response(account)
+
+
+# ---------------------------------------------------------------------------
+# Family goals
+# ---------------------------------------------------------------------------
+
+
+def _goal_service(db: AsyncSession, user: User) -> FamilyGoalService:
+    return FamilyGoalService(db, tenant_id=user.organization_id, user=user)
+
+
+def _to_goal_response(goal) -> GoalResponse:
+    return GoalResponse(
+        id=goal.id,
+        tenant_id=goal.tenant_id,
+        family_id=goal.family_id,
+        owner_user_id=goal.owner_user_id,
+        name=goal.name,
+        goal_type=goal.goal_type.value if hasattr(goal.goal_type, "value") else goal.goal_type,
+        status=goal.status.value if hasattr(goal.status, "value") else goal.status,
+        visibility=goal.visibility,
+        target_amount=goal.target_amount,
+        current_amount=goal.current_amount,
+        target_date=goal.target_date,
+        monthly_contribution=goal.monthly_contribution,
+        description=goal.description,
+        priority=goal.priority,
+        created_at=goal.created_at,
+        updated_at=goal.updated_at,
+    )
+
+
+def _to_contribution_response(contribution) -> GoalContributionResponse:
+    return GoalContributionResponse(
+        id=contribution.id,
+        goal_id=contribution.goal_id,
+        tenant_id=contribution.tenant_id,
+        amount=contribution.amount,
+        date=contribution.date,
+        source=contribution.source,
+        description=contribution.description,
+        contributed_by_user_id=contribution.contributed_by_user_id,
+        account_id=contribution.account_id,
+        created_at=contribution.created_at,
+        updated_at=contribution.updated_at,
+    )
+
+
+@router.post("/goals", response_model=GoalResponse)
+async def create_family_goal(
+    payload: FamilyGoalCreate,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Create a family-scoped goal."""
+    service = _goal_service(db, user)
+    try:
+        goal = await service.create_family_goal(payload)
+    except FamilyGoalServiceError as exc:
+        raise HTTPException(status_code=400, detail=exc.message)
+    return _to_goal_response(goal)
+
+
+@router.get("/goals", response_model=list[GoalResponse])
+async def list_family_goals(
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """List goals the current user is allowed to see."""
+    service = _goal_service(db, user)
+    goals = await service.list_visible_goals()
+    return [_to_goal_response(g) for g in goals]
+
+
+@router.get("/goals/{goal_id}", response_model=GoalResponse)
+async def get_family_goal(
+    goal_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Get a single family goal if the user is allowed to view it."""
+    service = _goal_service(db, user)
+    try:
+        goal = await service.get_goal(goal_id)
+    except FamilyGoalServiceError as exc:
+        status_code = 404 if "not found" in exc.message.lower() else 403
+        raise HTTPException(status_code=status_code, detail=exc.message)
+    return _to_goal_response(goal)
+
+
+@router.patch("/goals/{goal_id}", response_model=GoalResponse)
+async def update_family_goal(
+    goal_id: int,
+    payload: FamilyGoalUpdate,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Update a family goal."""
+    service = _goal_service(db, user)
+    try:
+        goal = await service.update_goal(goal_id, payload)
+    except FamilyGoalServiceError as exc:
+        status_code = 404 if "not found" in exc.message.lower() else 403
+        raise HTTPException(status_code=status_code, detail=exc.message)
+    return _to_goal_response(goal)
+
+
+@router.post("/goals/{goal_id}/cancel", response_model=GoalResponse)
+async def cancel_family_goal(
+    goal_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Cancel a family goal."""
+    service = _goal_service(db, user)
+    try:
+        goal = await service.cancel_goal(goal_id)
+    except FamilyGoalServiceError as exc:
+        status_code = 404 if "not found" in exc.message.lower() else 403
+        raise HTTPException(status_code=status_code, detail=exc.message)
+    return _to_goal_response(goal)
+
+
+@router.post("/goals/{goal_id}/complete", response_model=GoalResponse)
+async def complete_family_goal(
+    goal_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Mark a family goal as completed."""
+    service = _goal_service(db, user)
+    try:
+        goal = await service.complete_goal(goal_id)
+    except FamilyGoalServiceError as exc:
+        status_code = 404 if "not found" in exc.message.lower() else 403
+        raise HTTPException(status_code=status_code, detail=exc.message)
+    return _to_goal_response(goal)
+
+
+@router.post("/goals/{goal_id}/contributions", response_model=GoalContributionResponse)
+async def add_goal_contribution(
+    goal_id: int,
+    payload: GoalContributionCreate,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Add a contribution to a family goal."""
+    service = _goal_service(db, user)
+    try:
+        contribution = await service.add_contribution(goal_id, payload)
+    except FamilyGoalServiceError as exc:
+        status_code = 404 if "not found" in exc.message.lower() else 403
+        raise HTTPException(status_code=status_code, detail=exc.message)
+    return _to_contribution_response(contribution)
+
+
+@router.get("/goals/{goal_id}/contributions", response_model=list[GoalContributionResponse])
+async def list_goal_contributions(
+    goal_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """List contributions for a family goal."""
+    service = _goal_service(db, user)
+    try:
+        contributions = await service.list_contributions(goal_id)
+    except FamilyGoalServiceError as exc:
+        status_code = 404 if "not found" in exc.message.lower() else 403
+        raise HTTPException(status_code=status_code, detail=exc.message)
+    return [_to_contribution_response(c) for c in contributions]
+
+
+@router.get("/goals/{goal_id}/progress", response_model=GoalProgressResponse)
+async def get_goal_progress(
+    goal_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Get progress details for a family goal."""
+    service = _goal_service(db, user)
+    try:
+        progress = await service.get_progress(goal_id)
+    except FamilyGoalServiceError as exc:
+        status_code = 404 if "not found" in exc.message.lower() else 403
+        raise HTTPException(status_code=status_code, detail=exc.message)
+    return GoalProgressResponse(
+        goal=_to_goal_response(progress["goal"]),
+        target=progress["target"],
+        current=progress["current"],
+        remaining=progress["remaining"],
+        progress_percentage=progress["progress_percentage"],
+        monthly_contribution=progress["monthly_contribution"],
+        months_to_completion=progress["months_to_completion"],
+        estimated_completion=progress["estimated_completion"],
+        contributions=[_to_contribution_response(c) for c in progress["contributions"]],
+        is_on_track=progress["is_on_track"],
+    )

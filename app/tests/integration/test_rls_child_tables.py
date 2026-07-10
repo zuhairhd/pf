@@ -102,9 +102,9 @@ class TestRLSChildTables:
                     text("""
                         INSERT INTO goals
                         (name, goal_type, status, target_amount, current_amount,
-                         monthly_contribution, priority, tenant_id, created_at, updated_at)
+                         monthly_contribution, priority, visibility, tenant_id, created_at, updated_at)
                         VALUES
-                        (:name, 'CUSTOM', 'ACTIVE', 1000, 0, 100, 1, :tenant_id, NOW(), NOW())
+                        (:name, 'CUSTOM', 'ACTIVE', 1000, 0, 100, 1, 'private', :tenant_id, NOW(), NOW())
                         RETURNING id
                     """),
                     {"name": f"Goal {tenant_id} {self.run_id}", "tenant_id": tenant_id},
@@ -183,10 +183,10 @@ class TestRLSChildTables:
                 conn.execute(
                     text("""
                         INSERT INTO goal_contributions
-                        (goal_id, amount, date, source, created_at, updated_at)
-                        VALUES (:goal_id, 100, CURRENT_DATE, 'manual', NOW(), NOW())
+                        (goal_id, amount, date, source, tenant_id, created_at, updated_at)
+                        VALUES (:goal_id, 100, CURRENT_DATE, 'manual', :tenant_id, NOW(), NOW())
                     """),
-                    {"goal_id": p["goal_id"]},
+                    {"goal_id": p["goal_id"], "tenant_id": tenant_id},
                 )
                 conn.execute(
                     text("""
