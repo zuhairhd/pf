@@ -21,6 +21,8 @@ from app.models import (
     User,
 )
 from app.schemas.goal import FamilyGoalCreate, FamilyGoalUpdate, GoalContributionCreate
+from app.schemas.accounting import TransferCreate
+from app.services.accounting_service import AccountingService
 from app.services.family_account_access_service import FamilyAccountAccessService
 from app.services.family_service import FamilyService
 
@@ -241,20 +243,38 @@ class FamilyGoalService:
         if data.amount <= 0:
             raise FamilyGoalServiceError("Contribution amount must be positive")
 
-        account = None
+        access = FamilyAccountAccessService(self.db, self.tenant_id, self.user)
+        source_account = None
+        destination_account = None
+
+        # Legacy account link (progress-only visibility check).
         if data.account_id is not None:
-            result = await self.db.execute(
-                select(Account).where(
-                    Account.id == data.account_id,
-                    Account.tenant_id == self.tenant_id,
-                )
-            )
-            account = result.scalar_one_or_none()
+            account = await self._get_account(data.account_id)
             if account is None:
                 raise FamilyGoalServiceError("Account not found")
-            access = FamilyAccountAccessService(self.db, self.tenant_id, self.user)
             if not await access.can_view_account(account):
                 raise FamilyGoalServiceError("You do not have access to the selected account")
+
+        if data.post_to_accounting:
+            if data.source_account_id is None or data.destination_account_id is None:
+                raise FamilyGoalServiceError(
+                    "Posting to accounting requires both source_account_id and destination_account_id"
+                )
+            if data.source_account_id == data.destination_account_id:
+                raise FamilyGoalServiceError("Source and destination accounts must be different")
+
+            source_account = await self._get_account(data.source_account_id)
+            destination_account = await self._get_account(data.destination_account_id)
+            if source_account is None:
+                raise FamilyGoalServiceError("Source account not found")
+            if destination_account is None:
+                raise FamilyGoalServiceError("Destination account not found")
+
+            for acc, label in ((source_account, "Source"), (destination_account, "Destination")):
+                if acc.account_type != "Asset":
+                    raise FamilyGoalServiceError(f"{label} account must be an Asset account for goal contributions")
+                if not await access.can_use_account_for_posting(acc):
+                    raise FamilyGoalServiceError(f"You do not have permission to use the {label.lower()} account")
 
         contribution = GoalContribution(
             tenant_id=self.tenant_id,
@@ -264,6 +284,9 @@ class FamilyGoalService:
             description=data.description,
             contributed_by_user_id=self.user.id,
             account_id=data.account_id,
+            source_account_id=data.source_account_id,
+            destination_account_id=data.destination_account_id,
+            posting_status="pending" if data.post_to_accounting else "progress_only",
         )
         self.db.add(contribution)
 
@@ -273,6 +296,69 @@ class FamilyGoalService:
 
         await self.db.commit()
         await self.db.refresh(contribution)
+
+        if data.post_to_accounting and source_account is not None and destination_account is not None:
+            contribution = await self._post_contribution_to_accounting(contribution, goal)
+
+        return contribution
+
+    async def _get_account(self, account_id: int) -> Optional[Account]:
+        result = await self.db.execute(
+            select(Account).where(
+                Account.id == account_id,
+                Account.tenant_id == self.tenant_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def _post_contribution_to_accounting(self, contribution: GoalContribution, goal: Goal) -> GoalContribution:
+        """Create or return the journal entry for a contribution. Idempotent."""
+        if contribution.journal_entry_id is not None:
+            contribution.posting_status = "posted"
+            await self.db.commit()
+            await self.db.refresh(contribution)
+            return contribution
+
+        accounting = AccountingService(self.db, self.tenant_id)
+        reference = f"GOAL-{self.tenant_id}-{goal.id}-{contribution.id}"
+
+        try:
+            entry = await accounting.create_transfer(
+                TransferCreate(
+                    date=contribution.date,
+                    from_account_id=contribution.source_account_id,
+                    to_account_id=contribution.destination_account_id,
+                    amount=contribution.amount,
+                    narration=f"Goal contribution: {goal.name}",
+                )
+            )
+            # create_transfer generates its own reference; overwrite with our
+            # deterministic tenant-aware reference so idempotency lookups work.
+            entry.reference = reference
+            contribution.journal_entry_id = entry.id
+            contribution.posting_status = "posted"
+            await self.db.commit()
+            await self.db.refresh(contribution)
+        except Exception as exc:
+            contribution.posting_status = "failed"
+            await self.db.commit()
+            await self.db.refresh(contribution)
+            raise FamilyGoalServiceError(f"Failed to post contribution to accounting: {exc}")
+
+        return contribution
+
+    async def get_contribution(self, goal_id: int, contribution_id: int) -> GoalContribution:
+        goal = await self.get_goal(goal_id)
+        result = await self.db.execute(
+            select(GoalContribution).where(
+                GoalContribution.id == contribution_id,
+                GoalContribution.goal_id == goal.id,
+                GoalContribution.tenant_id == self.tenant_id,
+            )
+        )
+        contribution = result.scalar_one_or_none()
+        if contribution is None:
+            raise FamilyGoalServiceError("Contribution not found")
         return contribution
 
     async def list_contributions(self, goal_id: int) -> List[GoalContribution]:
@@ -283,6 +369,15 @@ class FamilyGoalService:
             .order_by(GoalContribution.date.desc())
         )
         return list(result.scalars().all())
+
+    async def post_contribution_to_accounting(
+        self, goal_id: int, contribution_id: int
+    ) -> GoalContribution:
+        """Post (or re-fetch) the accounting journal entry for an existing contribution."""
+        contribution = await self.get_contribution(goal_id, contribution_id)
+        goal = await self.get_goal(goal_id)
+        await self.require_contribute(goal)
+        return await self._post_contribution_to_accounting(contribution, goal)
 
     async def get_progress(self, goal_id: int) -> Dict:
         goal = await self.get_goal(goal_id)

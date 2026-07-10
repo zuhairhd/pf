@@ -94,8 +94,9 @@
 | FAM-1300 | Family Finance Foundation | **Done** |
 | FAM-1301 | Family Account Visibility and Shared/Private Data Rules | **Done** |
 | FAM-1302 | Family Goals | **Done** |
+| FAM-1300 to FAM-1302 | Family Finance foundation, account visibility, family goals | **Done** | Family/goal models, visibility rules, dashboard widget, and goal contribution accounting posting are complete | Allowance/chore tracking and family budget sharing still deferred | Continue with FAM-1303 or reports |
 | FAM-1303 to FAM-1305 | Family Finance (budgets, allowances, chores, dashboard) | Partial |
-| GOAL-1400 to GOAL-1402 | Goals | Partial (models, routes, service exist) |
+| GOAL-1400 to GOAL-1402 | Goals | **Done** for GOAL-1401A goal-contribution accounting posting; Partial for remaining goal planning/reversal |
 | LOAN-1500 to LOAN-1505 | Loans | Partial (models, routes, service exist) |
 | NOTIF-1600 to NOTIF-1604 | Notifications | **Done** for NOTIF-1600 (email backend, reminder generation, CRUD/preferences routes, tests); Partial for remaining notification channels |
 | ADMIN-1700 to ADMIN-1704 | Admin | Partial (router exists, limited functionality) |
@@ -140,7 +141,7 @@
 
 ## Latest Completed Card
 
-**DB-1105A - Family Goals Dashboard Widget UI** is complete. The dashboard now surfaces family goals with progress bars, summary cards, permission-aware quick actions (add contribution, complete, cancel), HTMX refresh, empty states, and tenant/RLS safety. No new migration was required.
+**GOAL-1401A - Goal Contributions Through Accounting Engine** is complete. Family goal contributions can now optionally post balanced journal entries through `AccountingService`, with full account validation, tenant/RLS safety, and idempotent posting. Progress-only contributions continue to work unchanged.
 
 ---
 

@@ -28,6 +28,9 @@ class GoalContributionCreate(BaseModel):
     date: date
     description: Optional[str] = None
     account_id: Optional[int] = None
+    source_account_id: Optional[int] = None
+    destination_account_id: Optional[int] = None
+    post_to_accounting: bool = False
 
 
 class FamilyGoalCreate(BaseModel):
@@ -61,6 +64,10 @@ class GoalContributionResponse(BaseModel):
     description: Optional[str] = None
     contributed_by_user_id: Optional[int] = None
     account_id: Optional[int] = None
+    source_account_id: Optional[int] = None
+    destination_account_id: Optional[int] = None
+    journal_entry_id: Optional[int] = None
+    posting_status: str
     created_at: datetime
     updated_at: datetime
 

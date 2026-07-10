@@ -318,6 +318,10 @@ def _to_contribution_response(contribution) -> GoalContributionResponse:
         description=contribution.description,
         contributed_by_user_id=contribution.contributed_by_user_id,
         account_id=contribution.account_id,
+        source_account_id=contribution.source_account_id,
+        destination_account_id=contribution.destination_account_id,
+        journal_entry_id=contribution.journal_entry_id,
+        posting_status=contribution.posting_status,
         created_at=contribution.created_at,
         updated_at=contribution.updated_at,
     )
@@ -426,7 +430,13 @@ async def add_goal_contribution(
     try:
         contribution = await service.add_contribution(goal_id, payload)
     except FamilyGoalServiceError as exc:
-        status_code = 404 if "not found" in exc.message.lower() else 403
+        msg = exc.message.lower()
+        if "not found" in msg:
+            status_code = 404
+        elif "permission" in msg or "access" in msg or "not allowed" in msg:
+            status_code = 403
+        else:
+            status_code = 400
         raise HTTPException(status_code=status_code, detail=exc.message)
     return _to_contribution_response(contribution)
 
@@ -445,6 +455,46 @@ async def list_goal_contributions(
         status_code = 404 if "not found" in exc.message.lower() else 403
         raise HTTPException(status_code=status_code, detail=exc.message)
     return [_to_contribution_response(c) for c in contributions]
+
+
+@router.get("/goals/{goal_id}/contributions/{contribution_id}", response_model=GoalContributionResponse)
+async def get_goal_contribution(
+    goal_id: int,
+    contribution_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Get a single family goal contribution."""
+    service = _goal_service(db, user)
+    try:
+        contribution = await service.get_contribution(goal_id, contribution_id)
+    except FamilyGoalServiceError as exc:
+        status_code = 404 if "not found" in exc.message.lower() else 403
+        raise HTTPException(status_code=status_code, detail=exc.message)
+    return _to_contribution_response(contribution)
+
+
+@router.post("/goals/{goal_id}/contributions/{contribution_id}/post", response_model=GoalContributionResponse)
+async def post_goal_contribution_to_accounting(
+    goal_id: int,
+    contribution_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Post an existing family goal contribution through the accounting engine."""
+    service = _goal_service(db, user)
+    try:
+        contribution = await service.post_contribution_to_accounting(goal_id, contribution_id)
+    except FamilyGoalServiceError as exc:
+        msg = exc.message.lower()
+        if "not found" in msg:
+            status_code = 404
+        elif "permission" in msg or "access" in msg or "not allowed" in msg:
+            status_code = 403
+        else:
+            status_code = 400
+        raise HTTPException(status_code=status_code, detail=exc.message)
+    return _to_contribution_response(contribution)
 
 
 @router.get("/goals/{goal_id}/progress", response_model=GoalProgressResponse)

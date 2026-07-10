@@ -506,15 +506,43 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 19
+
+### Card 19: GOAL-1401A — Goal Contributions Through Accounting Engine ✅ DONE
+
+**PLAN_V2 Reference:** GOAL-1401A (Goal Contributions Through Accounting Engine)
+**Type:** Feature / Accounting Integration
+**Priority:** MEDIUM-HIGH
+
+**Completed:**
+- Added `source_account_id`, `destination_account_id`, `journal_entry_id`, and `posting_status` columns to `goal_contributions`.
+- Created Alembic migration `33f87e4863be` with safe defaults and foreign keys.
+- Extended `GoalContributionCreate` / `GoalContributionResponse` schemas with the new accounting fields.
+- Updated `FamilyGoalService.add_contribution` to optionally post a transfer through `AccountingService`.
+- Enforced Asset-account validation and family account visibility rules for source/destination accounts.
+- Added deterministic tenant-aware journal reference: `GOAL-{tenant_id}-{goal_id}-{contribution_id}`.
+- Added idempotent `POST /family/goals/{goal_id}/contributions/{contribution_id}/post` endpoint.
+- Added `GET /family/goals/{goal_id}/contributions/{contribution_id}` endpoint.
+- Added 13 integration tests covering progress-only mode, balanced JE creation, idempotency, cross-tenant account rejection, private account rejection, non-asset rejection, viewer restrictions, and RLS.
+- Full test suite: **226 passed, 1 skipped**.
+
+**Remaining:**
+- Contribution reversal / edit workflow for posted contributions (GOAL-1401B).
+- Dashboard UI for selecting source/destination accounts when posting from the widget.
+
+**Test results:** 226 passed, 1 skipped
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 19: GOAL-1401A — Goal Contributions Through Accounting Engine
+### Card 20: REP-2000 — Basic Financial Reports
 
-**Decision:** Family goals are now visible and contributions can be added from the dashboard. The next logical step is to make goal contributions create proper accounting entries through the existing double-entry engine so savings toward goals flow into the chart of accounts and net-worth calculations.
+**Decision:** The accounting engine now contains data from imports, bills, subscriptions, and goal contributions. The next logical step is to expose foundational financial reports (balance sheet, income statement, trial balance, net worth) so users can see the financial picture the ledger contains.
 
-**What to tell the coding agent for GOAL-1401A:**
+**What to tell the coding agent for REP-2000:**
 
-> "Implement GOAL-1401A: Goal Contributions Through Accounting Engine. When a contribution is added to a family goal (via `/family/goals/{id}/contributions` or the dashboard partial), optionally create a balanced journal entry through `AccountingService`. Debit the selected source/payment account and credit a liability/equity goal-tracking account. Validate that the user can access the selected account. Keep RLS active and do not bypass the accounting engine."
+> "Implement REP-2000: Basic Financial Reports. Add service-level report generators for trial balance, balance sheet, income statement, and net worth, all scoped to the current tenant. Add JSON endpoints under `/reports/*` and simple HTML report pages. Reuse `AccountingService` balances and do not bypass RLS."
 
 ---
 

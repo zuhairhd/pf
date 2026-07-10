@@ -183,8 +183,8 @@ class TestRLSChildTables:
                 conn.execute(
                     text("""
                         INSERT INTO goal_contributions
-                        (goal_id, amount, date, source, tenant_id, created_at, updated_at)
-                        VALUES (:goal_id, 100, CURRENT_DATE, 'manual', :tenant_id, NOW(), NOW())
+                        (goal_id, amount, date, source, tenant_id, posting_status, created_at, updated_at)
+                        VALUES (:goal_id, 100, CURRENT_DATE, 'manual', :tenant_id, 'progress_only', NOW(), NOW())
                     """),
                     {"goal_id": p["goal_id"], "tenant_id": tenant_id},
                 )

@@ -78,10 +78,19 @@ class GoalContribution(Base, TimestampMixin, TenantMixin):
     source = Column(String(50), default="manual", nullable=False)  # manual, automatic, transfer
     description = Column(Text, nullable=True)
 
-    # Who made the contribution and optional account link
+    # Who made the contribution and optional account links
     contributed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True, index=True)
+
+    # Accounting posting fields for goal contributions (GOAL-1401A)
+    source_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True, index=True)
+    destination_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True, index=True)
+    journal_entry_id = Column(Integer, ForeignKey("journal_entries.id"), nullable=True, index=True)
+    posting_status = Column(String(20), default="progress_only", nullable=False)
 
     goal = relationship("Goal", back_populates="contributions")
     contributor = relationship("User", foreign_keys=[contributed_by_user_id])
     account = relationship("Account", foreign_keys=[account_id])
+    source_account = relationship("Account", foreign_keys=[source_account_id])
+    destination_account = relationship("Account", foreign_keys=[destination_account_id])
+    journal_entry = relationship("JournalEntry", foreign_keys=[journal_entry_id])
