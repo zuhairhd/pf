@@ -135,10 +135,40 @@ def what_if_prompt(scenario: str, financial_data: dict[str, Any]) -> list[dict[s
     ]
 
 
+def what_if_structured_prompt(result: dict[str, Any]) -> list[dict[str, str]]:
+    """Build a prompt for a structured what-if scenario result.
+
+    Only aggregated scenario metadata is sent — no raw transactions or
+    personally identifiable details.
+    """
+    user_content = (
+        "Explain the following what-if scenario in 3-5 concise sentences. "
+        "Be supportive and educational. Do not make definitive predictions, "
+        "do not give investment/tax/legal advice, and mention assumptions.\n\n"
+        f"Scenario: {result.get('scenario_label')}\n"
+        f"Currency: {result.get('currency')}\n"
+        f"Projection months: {result.get('months')}\n"
+        f"Baseline monthly net flow: {result.get('baseline_monthly_net_flow')}\n"
+        f"Scenario monthly net flow: {result.get('scenario_monthly_net_flow')}\n"
+        f"Total impact: {result.get('total_impact')}\n"
+        f"Baseline ending balance: {result.get('ending_balance_baseline')}\n"
+        f"Scenario ending balance: {result.get('ending_balance_scenario')}\n"
+        f"Confidence: {result.get('confidence')}\n"
+    )
+    warnings = result.get("warnings") or []
+    if warnings:
+        user_content += "Warnings:\n" + "\n".join(f"- {w['message']}" for w in warnings) + "\n"
+    return [
+        _system_prompt(),
+        {"role": "user", "content": user_content},
+    ]
+
+
 __all__ = [
     "DEFAULT_DISCLAIMER",
     "chat_prompt",
     "insight_prompt",
     "daily_brief_prompt",
     "what_if_prompt",
+    "what_if_structured_prompt",
 ]

@@ -5,9 +5,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional
 
-from app.core.security import get_db_with_tenant_context
-from app.models import AIInsight, AIReport, AIChatSession, AIChatMessage
-from app.schemas.ai import ChatRequest, ChatResponse, WhatIfRequest, WhatIfResponse
+from app.ai_cfo.engines.whatif_simulator import WhatIfError, WhatIfScenarioType, WhatIfSimulator
+from app.ai_cfo.llm.prompts import DEFAULT_DISCLAIMER
+from app.core.security import get_db_with_tenant_context, require_tenant_member
+from app.models import AIInsight, AIReport, AIChatSession, AIChatMessage, User
+from app.schemas.ai import (
+    ChatRequest,
+    ChatResponse,
+    WhatIfCompareRequest,
+    WhatIfCompareResponse,
+    WhatIfRequest,
+    WhatIfResponse,
+    WhatIfScenarioField,
+    WhatIfScenarioMeta,
+    WhatIfScenarioRequest,
+    WhatIfScenariosResponse,
+    WhatIfSimulationResponse,
+)
 from app.services.ai_orchestrator import AIOrchestrator
 from app.services.ai_chat import AIChatService
 from app.services.ai_forecast import AIForecastService
@@ -16,6 +30,86 @@ from app.config import get_settings
 settings = get_settings()
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+
+
+_SCENARIO_CATALOG = [
+    WhatIfScenarioMeta(
+        scenario_type=WhatIfScenarioType.INCREASE_MONTHLY_SAVINGS.value,
+        label="Increase monthly savings",
+        description="Model the impact of saving an extra fixed amount each month.",
+        fields=[
+            WhatIfScenarioField(name="monthly_extra_savings", field_type="decimal", required=True, description="Extra amount to save each month"),
+            WhatIfScenarioField(name="target_account_id", field_type="integer", required=False, description="Optional destination account"),
+            WhatIfScenarioField(name="goal_id", field_type="integer", required=False, description="Optional linked goal to show acceleration"),
+            WhatIfScenarioField(name="months", field_type="integer", required=False, description="Projection horizon (1-120)"),
+        ],
+    ),
+    WhatIfScenarioMeta(
+        scenario_type=WhatIfScenarioType.REDUCE_EXPENSE_CATEGORY.value,
+        label="Reduce expense category",
+        description="Model the impact of reducing a recurring expense.",
+        fields=[
+            WhatIfScenarioField(name="monthly_reduction_amount", field_type="decimal", required=False, description="Fixed monthly reduction"),
+            WhatIfScenarioField(name="reduction_percent", field_type="decimal", required=False, description="Percentage reduction of the category"),
+            WhatIfScenarioField(name="expense_account_id", field_type="integer", required=False, description="Optional expense account"),
+            WhatIfScenarioField(name="months", field_type="integer", required=False, description="Projection horizon (1-120)"),
+        ],
+    ),
+    WhatIfScenarioMeta(
+        scenario_type=WhatIfScenarioType.INCOME_INCREASE.value,
+        label="Income increase",
+        description="Model the impact of a raise or new income stream.",
+        fields=[
+            WhatIfScenarioField(name="monthly_income_increase", field_type="decimal", required=False, description="Fixed monthly increase"),
+            WhatIfScenarioField(name="percent_increase", field_type="decimal", required=False, description="Percentage increase"),
+            WhatIfScenarioField(name="months", field_type="integer", required=False, description="Projection horizon (1-120)"),
+        ],
+    ),
+    WhatIfScenarioMeta(
+        scenario_type=WhatIfScenarioType.EMERGENCY_EXPENSE.value,
+        label="Emergency expense",
+        description="Model the impact of a one-time unexpected expense.",
+        fields=[
+            WhatIfScenarioField(name="amount", field_type="decimal", required=True, description="One-time expense amount"),
+            WhatIfScenarioField(name="month_number", field_type="integer", required=False, description="Month in which the expense occurs"),
+            WhatIfScenarioField(name="source_account_id", field_type="integer", required=False, description="Account used to cover the expense"),
+            WhatIfScenarioField(name="months", field_type="integer", required=False, description="Projection horizon (1-120)"),
+        ],
+    ),
+    WhatIfScenarioMeta(
+        scenario_type=WhatIfScenarioType.CANCEL_SUBSCRIPTION.value,
+        label="Cancel subscription",
+        description="Model the impact of cancelling a recurring subscription.",
+        fields=[
+            WhatIfScenarioField(name="subscription_id", field_type="integer", required=True, description="Subscription to cancel"),
+            WhatIfScenarioField(name="months", field_type="integer", required=False, description="Projection horizon (1-120)"),
+        ],
+    ),
+    WhatIfScenarioMeta(
+        scenario_type=WhatIfScenarioType.GOAL_CONTRIBUTION_INCREASE.value,
+        label="Increase goal contribution",
+        description="Model how increasing monthly contributions affects goal progress.",
+        fields=[
+            WhatIfScenarioField(name="goal_id", field_type="integer", required=True, description="Goal to contribute to"),
+            WhatIfScenarioField(name="monthly_extra_contribution", field_type="decimal", required=True, description="Extra monthly contribution"),
+            WhatIfScenarioField(name="months", field_type="integer", required=False, description="Projection horizon (1-120)"),
+        ],
+    ),
+    WhatIfScenarioMeta(
+        scenario_type=WhatIfScenarioType.NEW_MONTHLY_PAYMENT.value,
+        label="New monthly payment",
+        description="Model the impact of a new recurring payment such as a car loan.",
+        fields=[
+            WhatIfScenarioField(name="down_payment", field_type="decimal", required=False, description="One-time upfront payment"),
+            WhatIfScenarioField(name="monthly_payment", field_type="decimal", required=True, description="Recurring monthly payment"),
+            WhatIfScenarioField(name="months", field_type="integer", required=False, description="Projection horizon (1-120)"),
+        ],
+    ),
+]
+
+
+def _handle_whatif_error(exc: WhatIfError) -> None:
+    raise HTTPException(status_code=exc.status_code, detail=exc.message)
 
 
 @router.get("/chat", response_class=HTMLResponse)
@@ -101,6 +195,58 @@ async def what_if_scenario(
     result = await forecast_service.simulate_scenario(request.scenario)
 
     return result
+
+
+@router.get("/what-if/scenarios", response_model=WhatIfScenariosResponse)
+async def what_if_scenarios(
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Return supported what-if scenario types and their fields."""
+    return WhatIfScenariosResponse(scenarios=_SCENARIO_CATALOG)
+
+
+@router.post("/what-if/simulate", response_model=WhatIfSimulationResponse)
+async def what_if_simulate(
+    request: WhatIfScenarioRequest,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Run a single structured what-if scenario."""
+    simulator = WhatIfSimulator(db, user.organization_id, user=user)
+    try:
+        result = await simulator.simulate(request.model_dump())
+    except WhatIfError as exc:
+        _handle_whatif_error(exc)
+    return WhatIfSimulationResponse(result=result, disclaimer=DEFAULT_DISCLAIMER)
+
+
+@router.post("/what-if/compare", response_model=WhatIfCompareResponse)
+async def what_if_compare(
+    request: WhatIfCompareRequest,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Compare multiple what-if scenarios side-by-side."""
+    simulator = WhatIfSimulator(db, user.organization_id, user=user)
+    try:
+        results = await simulator.simulate_many([s.model_dump() for s in request.scenarios])
+    except WhatIfError as exc:
+        _handle_whatif_error(exc)
+
+    best = max(results, key=lambda r: r["ending_balance_scenario"])
+    worst = min(results, key=lambda r: r["ending_balance_scenario"])
+    summary = {
+        "best_ending_balance_scenario": best["scenario_label"],
+        "worst_ending_balance_scenario": worst["scenario_label"],
+        "best_ending_balance": best["ending_balance_scenario"],
+        "worst_ending_balance": worst["ending_balance_scenario"],
+    }
+    return WhatIfCompareResponse(
+        results=results,
+        summary=summary,
+        disclaimer=DEFAULT_DISCLAIMER,
+    )
 
 
 @router.get("/reports/daily")

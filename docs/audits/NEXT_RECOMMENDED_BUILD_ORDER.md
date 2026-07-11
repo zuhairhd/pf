@@ -10,9 +10,9 @@
 
 ## Executive Summary
 
-Cards PF-014-DB (Database Initialization), PF-103A (RLS Implementation), PF-103C (Child Table RLS Coverage), PF-103B (Safe Super Admin Access), SAAS-200-SEED (Seed Default Data), AUTH-300-FIX (Complete Authentication Flow), and PF-100-TEST (Formalize Test Infrastructure) are **COMPLETE**. **IMP-700-CSV (CSV Import Module)** is also complete. The database now has 42 tables with Alembic-managed migrations, 32 tenant-scoped tables are protected by PostgreSQL Row-Level Security with FORCE RLS, the auth gateway is functional, a shared test foundation is in place, and users can upload CSV files to create journal entries.
+Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), and AI-1214 (What-If Simulator) are **COMPLETE**. The database has 43 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and users can run read-only financial simulations through the AI CFO.
 
-Cards PF-014-DB, PF-103A, PF-103C, PF-103B, SAAS-200-SEED, AUTH-300-FIX, PF-100-TEST, IMP-700-CSV, and **IMP-702-SMS** are now complete. The next card should be **AI-1201-LLM — Integrate OpenAI LLM Client**, the core intelligence differentiator for the platform.
+The next card should be **AI-1211 — Debt Optimizer**, the next focused AI CFO engine.
 
 ---
 
@@ -617,15 +617,42 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 23
+
+### Card 23: AI-1214 — What-If Simulator ✅ DONE
+
+**PLAN_V2 Reference:** AI-1214 (What-If Simulator)  
+**Type:** Feature / AI CFO  
+**Priority:** HIGH
+
+**Completed:**
+- Created `app/ai_cfo/engines/whatif_simulator.py` with deterministic, read-only scenario handlers.
+- Supported scenarios: increase monthly savings, reduce expense category, income increase, emergency expense, cancel subscription, goal contribution increase, and new monthly payment.
+- Added structured Pydantic schemas in `app/schemas/ai.py` and a dedicated LLM prompt in `app/ai_cfo/llm/prompts.py`.
+- Added `/ai/what-if/scenarios`, `/ai/what-if/simulate`, and `/ai/what-if/compare` endpoints in `app/routers/ai.py`.
+- Validated scenario inputs against tenant-owned accounts, subscriptions, and goals using `FamilyAccountAccessService` and `FamilyGoalService`.
+- Implemented deterministic fallback narrative and optional LLM narrative with cost-control and safety filtering.
+- Made `RequestValidationError` responses Decimal-safe in `app/middleware/error_handling.py`.
+- Added 20 integration tests; full suite **279 passed, 1 skipped**.
+
+**Remaining:**
+- Dedicated simulator UI template/page.
+- More advanced modeling (taxes, investment returns, seasonal income).
+- Integration with Debt/Savings optimizers once they exist.
+
+**Test results:** 279 passed, 1 skipped
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 23: AI-1214 — What-If Simulator
+### Card 24: AI-1211 — Debt Optimizer
 
-**Decision:** With core financial data, reports, and document OCR in place, the next logical step is to add interactive what-if simulations that let users explore the impact of income, expense, or debt changes on their financial outlook.
+**Decision:** With the What-If Simulator complete, the next logical step is a focused debt-optimization engine. It will analyze the user's loans and credit obligations, recommend avalanche/snowball payoff strategies, and integrate with the simulator so users can model "what-if I pay extra?" scenarios.
 
-**What to tell the coding agent for AI-1214:**
+**What to tell the coding agent for AI-1211:**
 
-> "Implement AI-1214: What-If Simulator. Add service + API endpoints that let an authenticated tenant member create scenarios (e.g., salary change, new expense, debt payoff) and return projected cash flow, net worth, and goal impact. Use existing reports/accounting data, keep tenant/RLS safety, and add tests. Do not build full AI explanation yet."
+> "Implement AI-1211: Debt Optimizer. Add a read-only engine and API endpoint that ranks the user's liabilities by interest rate or balance, calculates total interest and payoff timeline, and recommends avalanche/snowball strategies. Keep tenant/RLS safety, respect private account visibility, and add tests. Do not build full AI recommendation engine yet."
 
 ---
 

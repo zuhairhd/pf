@@ -1,4 +1,5 @@
 from fastapi import Request, FastAPI
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -34,11 +35,11 @@ def setup_error_handlers(app: FastAPI):
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
         return JSONResponse(
             status_code=422,
-            content={
+            content=jsonable_encoder({
                 "error": "validation_error",
                 "message": "Request validation failed",
                 "details": exc.errors(),
-            }
+            })
         )
     
     @app.exception_handler(TenantNotFoundException)

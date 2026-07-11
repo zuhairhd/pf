@@ -90,7 +90,7 @@
 | ACC-503A | Journal Entry Reversal Support | **Done** (`AccountingService.reverse_journal_entry`, reversal metadata, bill/subscription reversal integration, tests) |
 | BDG-1000 to BDG-1003 | Budgets | Partial (models, routes, service exist) |
 | DB-1100 to DB-1105 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI and DB-1105A family goals widget UI; Partial for remaining dashboard widgets |
-| AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client; Partial for remaining AI engines (health score, chat, what-if, orchestrator exist but not all wired to LLM) |
+| AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client and AI-1214 What-If Simulator; Partial for remaining AI engines |
 | FAM-1300 | Family Finance Foundation | **Done** |
 | FAM-1301 | Family Account Visibility and Shared/Private Data Rules | **Done** |
 | FAM-1302 | Family Goals | **Done** |
@@ -139,9 +139,36 @@
 
 ---
 
+## Completed Card 23
+
+### Card 23: AI-1214 — What-If Simulator ✅ DONE
+
+**PLAN_V2 Reference:** AI-1214 (What-If Simulator)  
+**Type:** Feature / AI CFO  
+**Priority:** HIGH
+
+**Completed:**
+- Created `app/ai_cfo/engines/whatif_simulator.py` with deterministic, read-only scenario handlers.
+- Supported scenarios: increase monthly savings, reduce expense category, income increase, emergency expense, cancel subscription, goal contribution increase, and new monthly payment.
+- Added structured Pydantic schemas in `app/schemas/ai.py` and a dedicated LLM prompt in `app/ai_cfo/llm/prompts.py`.
+- Added `/ai/what-if/scenarios`, `/ai/what-if/simulate`, and `/ai/what-if/compare` endpoints in `app/routers/ai.py`.
+- Validated scenario inputs against tenant-owned accounts, subscriptions, and goals using `FamilyAccountAccessService` and `FamilyGoalService`.
+- Implemented deterministic fallback narrative and optional LLM narrative with cost-control and safety filtering.
+- Made `RequestValidationError` responses Decimal-safe in `app/middleware/error_handling.py`.
+- Added 20 integration tests; full suite **279 passed, 1 skipped**.
+
+**Remaining:**
+- Dedicated simulator UI template/page.
+- More advanced modeling (taxes, investment returns, seasonal income).
+- Integration with Debt/Savings optimizers once they exist.
+
+**Test results:** 279 passed, 1 skipped
+
+---
+
 ## Latest Completed Card
 
-**DOC-2101 - OCR Engine Integration** is complete. The document module now has an engine abstraction for text/CSV, PDF (via PyPDF2), and optional image OCR (via pytesseract). The `POST /documents/{id}/ocr` endpoint returns a dedicated OCR result with status, extracted text preview, and safe error handling. Tenant isolation and RLS remain enforced and the full test suite passes.
+**AI-1214 - What-If Simulator** is complete. Authenticated tenant members can now run read-only what-if scenarios, view deterministic cash-flow and balance projections, and receive an optional LLM-generated narrative with educational disclaimers. Tenant isolation and RLS remain enforced and the full test suite passes.
 
 ---
 
