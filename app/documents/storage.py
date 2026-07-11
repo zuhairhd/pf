@@ -164,6 +164,17 @@ def resolve_storage_path(storage_path: str) -> Path:
     return path.resolve()
 
 
+def is_path_within_tenant_dir(storage_path: str, tenant_id: int, settings: Settings) -> bool:
+    """Return True if the resolved storage path lies inside the tenant upload dir."""
+    resolved = resolve_storage_path(storage_path)
+    tenant_dir = _tenant_upload_dir(settings, tenant_id)
+    try:
+        resolved.relative_to(tenant_dir.resolve())
+        return True
+    except ValueError:
+        return False
+
+
 def delete_file(storage_path: str) -> None:
     """Delete a stored file if it exists."""
     path = resolve_storage_path(storage_path)

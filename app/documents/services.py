@@ -152,6 +152,15 @@ class DocumentService:
         document = await self.get_document(document_id)
         path = storage.resolve_storage_path(document.storage_path)
 
+        if not storage.is_path_within_tenant_dir(
+            document.storage_path, self.tenant_id, settings
+        ):
+            document.ocr_status = "failed"
+            document.ocr_error = "Stored file is outside the tenant upload directory"
+            await self.db.commit()
+            await self.db.refresh(document)
+            return document
+
         if not path.exists():
             document.ocr_status = "failed"
             document.ocr_error = "Stored file not found"
@@ -159,19 +168,23 @@ class DocumentService:
             await self.db.refresh(document)
             return document
 
+        document.ocr_status = "processing"
         document.status = "processing"
         await self.db.commit()
 
         try:
             content = path.read_bytes()
-            text, status, confidence, error = ocr.extract_text(
-                content, document.mime_type, settings
-            )
-            document.ocr_text = text
-            document.ocr_status = status
-            document.ocr_confidence = confidence
-            document.ocr_error = error
-            document.status = "processed" if status == "success" else "uploaded"
+            result = ocr.OCRProcessor().process(content, document.mime_type, settings)
+            document.ocr_text = result.text
+            document.ocr_status = result.status
+            document.ocr_confidence = result.confidence
+            document.ocr_error = result.error
+            if result.status == "processed":
+                document.status = "processed"
+            elif result.status == "failed":
+                document.status = "failed"
+            else:
+                document.status = "uploaded"
         except Exception as exc:
             document.ocr_status = "failed"
             document.ocr_error = str(exc)

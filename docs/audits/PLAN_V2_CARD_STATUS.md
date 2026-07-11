@@ -103,7 +103,7 @@
 | BILLING-1800 to BILLING-1803 | Billing | **Missing** (Stripe fields on model only) |
 | API-1900 to API-1903 | API | **Missing** (no public API) |
 | REP-2000 to REP-2005 | Reports | **Done** for REP-2000 (income statement, balance sheet, cash flow, net worth, expense analysis); Partial for remaining reports |
-| DOC-2100 to DOC-2103 | Documents | **Done** for DOC-2100 (hardened model, upload/storage, OCR metadata, entity linking, tests); Partial for DOC-2101+ |
+| DOC-2100 to DOC-2103 | Documents | **Done** for DOC-2100 and DOC-2101 (upload/storage, OCR engine abstraction, PDF/text OCR, entity linking, tests); Partial for DOC-2102+ |
 | MOB-2200 to MOB-2202 | Mobile/PWA | **Missing** |
 | FEED-2300 to FEED-2303 | Bank Feeds | **Missing** |
 | SCALE-2400 to SCALE-2406 | Scale/Infra | **Missing** (no Docker, no CI/CD) |
@@ -141,7 +141,7 @@
 
 ## Latest Completed Card
 
-**DOC-2100 - Document OCR / Document Management Enhancement** is complete. The document model now supports upload metadata, checksums, OCR-ready fields, and generic entity linking. The `app/documents/` package provides safe tenant-scoped storage, validation, lightweight OCR, and linking to transactions, bills, subscriptions, and goals. The `documents` table remains RLS-protected and the full test suite passes.
+**DOC-2101 - OCR Engine Integration** is complete. The document module now has an engine abstraction for text/CSV, PDF (via PyPDF2), and optional image OCR (via pytesseract). The `POST /documents/{id}/ocr` endpoint returns a dedicated OCR result with status, extracted text preview, and safe error handling. Tenant isolation and RLS remain enforced and the full test suite passes.
 
 ---
 

@@ -28,6 +28,7 @@ mypy
 openpyxl
 pillow
 pytesseract
+PyPDF2
 weasyprint
 stripe
 python-dateutil

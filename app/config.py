@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     DOCUMENT_ALLOWED_EXTENSIONS: str = "pdf,png,jpg,jpeg,webp,txt,csv"
     OCR_ENABLED: bool = False
     OCR_DEV_MODE: bool = True
+    OCR_ENGINE: str = "auto"
+    OCR_MAX_TEXT_LENGTH: int = 100_000
+    OCR_TIMEOUT_SECONDS: int = 30
+    OCR_ALLOW_IMAGE_OCR: bool = False
+    OCR_ALLOW_PDF_TEXT_EXTRACTION: bool = True
     
     # Stripe
     STRIPE_SECRET_KEY: str = ""

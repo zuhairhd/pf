@@ -7,10 +7,12 @@ from __future__ import annotations
 
 from datetime import date
 from io import BytesIO
+from pathlib import Path
 
 import pytest
 
 from app.core.rls import set_tenant_context_async
+from app.documents import storage
 from app.models import Document
 from app.tests.helpers import (
     assert_rls_enabled,
@@ -23,6 +25,21 @@ from app.tests.helpers import (
 
 def _file_tuple(name: str, content: bytes, content_type: str = "text/plain"):
     return (name, BytesIO(content), content_type)
+
+
+def _make_pdf_bytes(text: str = "Hello PDF") -> bytes:
+    """Create a tiny PDF with embedded text for testing."""
+    content = f"BT /F1 12 Tf 100 700 Td ({text}) Tj ET\n"
+    return (
+        b"%PDF-1.4\n"
+        b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+        b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
+        b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n"
+        b"4 0 obj\n<< /Length " + str(len(content)).encode() + b" >>\nstream\n" + content.encode() + b"\nendstream\nendobj\n"
+        b"5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n"
+        b"xref\n0 6\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \n0000000266 00000 n \n0000000374 00000 n \n"
+        b"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n460\n%%EOF\n"
+    )
 
 
 async def _create_bill(client, headers):
@@ -227,8 +244,54 @@ async def test_text_ocr_extraction(client, db, auth_headers, unique):
     ocr_response = await client.post(f"/documents/{doc_id}/ocr", headers=auth_headers)
     assert ocr_response.status_code == 200, ocr_response.text
     data = ocr_response.json()
-    assert data["ocr_status"] == "success"
-    assert "Extract this text" in data["ocr_text"]
+    assert data["document_id"] == doc_id
+    assert data["ocr_status"] == "processed"
+    assert "Extract this text" in (data["ocr_text"] or "")
+    assert data["text_preview"] == data["ocr_text"]
+
+    await client.delete(f"/documents/{doc_id}", headers=auth_headers)
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_csv_ocr_extraction(client, db, auth_headers, unique):
+    content = b"date,amount,description\n2026-07-01,12.50,coffee\n"
+    response = await client.post(
+        "/documents/upload",
+        files={"file": _file_tuple("statement.csv", content, "text/csv")},
+        data={"document_type": "statement"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    doc_id = response.json()["id"]
+
+    ocr_response = await client.post(f"/documents/{doc_id}/ocr", headers=auth_headers)
+    assert ocr_response.status_code == 200, ocr_response.text
+    data = ocr_response.json()
+    assert data["ocr_status"] == "processed"
+    assert "coffee" in (data["ocr_text"] or "")
+
+    await client.delete(f"/documents/{doc_id}", headers=auth_headers)
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_pdf_text_extraction(client, db, auth_headers, unique):
+    pdf_bytes = _make_pdf_bytes("Receipt total 45.000 OMR")
+    response = await client.post(
+        "/documents/upload",
+        files={"file": _file_tuple("receipt.pdf", pdf_bytes, "application/pdf")},
+        data={"document_type": "receipt"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200, response.text
+    doc_id = response.json()["id"]
+
+    ocr_response = await client.post(f"/documents/{doc_id}/ocr", headers=auth_headers)
+    assert ocr_response.status_code == 200, ocr_response.text
+    data = ocr_response.json()
+    assert data["ocr_status"] == "processed"
+    assert "45.000 OMR" in (data["ocr_text"] or "")
 
     await client.delete(f"/documents/{doc_id}", headers=auth_headers)
 
@@ -250,8 +313,124 @@ async def test_unsupported_ocr_type_handled_safely(
     assert ocr_response.status_code == 200, ocr_response.text
     data = ocr_response.json()
     assert data["ocr_status"] in ("unsupported", "pending", "failed")
+    assert data["ocr_error"] is not None
 
     await client.delete(f"/documents/{doc_id}", headers=auth_headers)
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_ocr_text_truncated_at_max_length(
+    client, db, auth_headers, unique, monkeypatch
+):
+    # Truncate to a small length so the test stays fast.
+    monkeypatch.setattr("app.documents.services.settings.OCR_MAX_TEXT_LENGTH", 20)
+
+    content = b"This is a long text that should be truncated by OCR max length"
+    response = await client.post(
+        "/documents/upload",
+        files={"file": _file_tuple("long.txt", content)},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    doc_id = response.json()["id"]
+
+    ocr_response = await client.post(f"/documents/{doc_id}/ocr", headers=auth_headers)
+    assert ocr_response.status_code == 200, ocr_response.text
+    data = ocr_response.json()
+    assert data["ocr_status"] == "processed"
+    assert len(data["ocr_text"] or "") <= 20
+    assert data["text_preview"] == data["ocr_text"]
+
+    await client.delete(f"/documents/{doc_id}", headers=auth_headers)
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_ocr_missing_file_fails_safely(client, db, auth_headers, unique):
+    response = await client.post(
+        "/documents/upload",
+        files={"file": _file_tuple("orphan.txt", b"orphan")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    doc_id = response.json()["id"]
+    storage_path = response.json()["storage_path"]
+
+    # Delete the stored file behind the service's back.
+    resolved = storage.resolve_storage_path(storage_path)
+    if resolved.exists():
+        resolved.unlink()
+
+    ocr_response = await client.post(f"/documents/{doc_id}/ocr", headers=auth_headers)
+    assert ocr_response.status_code == 200, ocr_response.text
+    data = ocr_response.json()
+    assert data["ocr_status"] == "failed"
+    assert "not found" in (data["ocr_error"] or "").lower()
+
+    await client.delete(f"/documents/{doc_id}", headers=auth_headers)
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_ocr_requires_auth(client):
+    response = await client.post("/documents/1/ocr")
+    assert response.status_code in (401, 403)
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_ocr_response_does_not_leak_filesystem_path(
+    client, db, auth_headers, unique
+):
+    response = await client.post(
+        "/documents/upload",
+        files={"file": _file_tuple("safe.txt", b"secret content")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    doc_id = response.json()["id"]
+    storage_path = response.json()["storage_path"]
+
+    ocr_response = await client.post(f"/documents/{doc_id}/ocr", headers=auth_headers)
+    assert ocr_response.status_code == 200, ocr_response.text
+    data = ocr_response.json()
+    assert "storage_path" not in data
+    assert "uploads/documents" not in str(data)
+    assert storage_path not in str(data)
+
+    await client.delete(f"/documents/{doc_id}", headers=auth_headers)
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_tenant_a_cannot_ocr_tenant_b_document(
+    client, db, unique
+):
+    org_a = await create_test_organization(db, name=unique("Org A"), slug=unique("org-a"))
+    user_a, password_a = await create_test_user(
+        db, org_a, email=unique("a") + "@example.com", role="owner"
+    )
+    org_b = await create_test_organization(db, name=unique("Org B"), slug=unique("org-b"))
+    user_b, password_b = await create_test_user(
+        db, org_b, email=unique("b") + "@example.com", role="owner"
+    )
+
+    headers_a = await auth_headers_for(client, user_a.email, password_a)
+    headers_b = await auth_headers_for(client, user_b.email, password_b)
+
+    response = await client.post(
+        "/documents/upload",
+        files={"file": _file_tuple("private.txt", b"private")},
+        headers=headers_a,
+    )
+    assert response.status_code == 200
+    doc_id = response.json()["id"]
+
+    ocr_b = await client.post(f"/documents/{doc_id}/ocr", headers=headers_b)
+    assert ocr_b.status_code == 404
+
+    await client.delete(f"/documents/{doc_id}", headers=headers_a)
 
 
 @pytest.mark.integration

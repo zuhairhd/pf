@@ -11,6 +11,7 @@ from app.schemas.document import (
     DocumentLinkRequest,
     DocumentResponse,
     DocumentUpdate,
+    OCRResultResponse,
 )
 
 router = APIRouter()
@@ -141,7 +142,20 @@ async def archive_document(
     return _to_response(document)
 
 
-@router.post("/{document_id}/ocr", response_model=DocumentResponse)
+def _to_ocr_response(document, preview_length: int = 500) -> OCRResultResponse:
+    text = document.ocr_text
+    preview = text[:preview_length] if text else None
+    return OCRResultResponse(
+        document_id=document.id,
+        ocr_status=document.ocr_status,
+        ocr_text=text,
+        text_preview=preview,
+        ocr_error=document.ocr_error,
+        updated_at=document.updated_at,
+    )
+
+
+@router.post("/{document_id}/ocr", response_model=OCRResultResponse)
 async def run_document_ocr(
     document_id: int,
     db: AsyncSession = Depends(get_db_with_tenant_context),
@@ -150,7 +164,7 @@ async def run_document_ocr(
     """Run OCR/text extraction on a document."""
     service = DocumentService(db, user.organization_id, user.id)
     document = await service.run_ocr(document_id)
-    return _to_response(document)
+    return _to_ocr_response(document)
 
 
 @router.post("/{document_id}/link", response_model=DocumentResponse)

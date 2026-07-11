@@ -15,6 +15,7 @@ celery_app = Celery(
         "app.tasks.notifications",
         "app.tasks.subscription_detection",
         "app.tasks.anomaly_detection",
+        "app.tasks.document_ocr",
     ],
 )
 

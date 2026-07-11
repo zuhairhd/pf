@@ -42,6 +42,19 @@ class DocumentLinkRequest(BaseModel):
     related_entity_id: int = Field(..., ge=1)
 
 
+class OCRResultResponse(BaseModel):
+    """Result of an OCR/text extraction request."""
+
+    document_id: int
+    ocr_status: str
+    ocr_text: Optional[str] = None
+    text_preview: Optional[str] = None
+    ocr_error: Optional[str] = None
+    updated_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
 class DocumentResponse(BaseModel):
     """Document record returned by the API."""
 

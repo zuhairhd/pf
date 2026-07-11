@@ -588,15 +588,44 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 22
+
+### Card 22: DOC-2101 — OCR Engine Integration ✅ DONE
+
+**PLAN_V2 Reference:** DOC-2101 (OCR Engine Integration)  
+**Type:** Feature / Integration  
+**Priority:** MEDIUM-HIGH
+
+**Completed:**
+- Refactored `app/documents/ocr.py` into an engine abstraction with `OCRResult`, `OCREngine`, `TextFileOCREngine`, `PDFTextExtractionEngine`, `ImageTesseractOCREngine`, and `OCRProcessor`.
+- Added PyPDF2-based PDF text extraction and optional pytesseract image OCR.
+- Added config variables: `OCR_ENGINE`, `OCR_MAX_TEXT_LENGTH`, `OCR_TIMEOUT_SECONDS`, `OCR_ALLOW_IMAGE_OCR`, `OCR_ALLOW_PDF_TEXT_EXTRACTION`.
+- Updated `DocumentService.run_ocr()` to set `ocr_status=processing`, enforce path safety, truncate text, and store `processed`/`unsupported`/`failed` statuses.
+- Changed `POST /documents/{document_id}/ocr` to return a dedicated `OCRResultResponse` with text preview and no filesystem path leakage.
+- Added `app/tasks/document_ocr.py` Celery task stub and included it in `celery_app`.
+- Added `PyPDF2` to `requirements.txt`.
+- Updated `.env.example` with new OCR placeholders.
+- Added/updated OCR integration tests for text, CSV, PDF, truncation, missing file, auth, tenant isolation, and path-leak prevention.
+- Full test suite: **259 passed, 1 skipped**.
+
+**Remaining:**
+- Structured receipt field extraction (date, amount, merchant) — future AI/ML card.
+- Cloud vision OCR backend.
+- Full Celery worker wiring for async OCR.
+
+**Test results:** 259 passed, 1 skipped
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 22: DOC-2101 — OCR Engine Integration
+### Card 23: AI-1214 — What-If Simulator
 
-**Decision:** DOC-2100 laid the upload, storage, and metadata foundation. The next logical step is to plug in a real OCR backend so images and PDFs yield structured receipt data, while keeping tenant/RLS safety and idempotent processing.
+**Decision:** With core financial data, reports, and document OCR in place, the next logical step is to add interactive what-if simulations that let users explore the impact of income, expense, or debt changes on their financial outlook.
 
-**What to tell the coding agent for DOC-2101:**
+**What to tell the coding agent for AI-1214:**
 
-> "Implement DOC-2101: OCR Engine Integration. Add a Tesseract or cloud-vision OCR backend for images/PDFs, extract structured receipt fields (date, amount, merchant), store results safely, and add tests. Keep tenant/RLS isolation, do not commit secrets, and do not disable RLS."
+> "Implement AI-1214: What-If Simulator. Add service + API endpoints that let an authenticated tenant member create scenarios (e.g., salary change, new expense, debt payoff) and return projected cash flow, net worth, and goal impact. Use existing reports/accounting data, keep tenant/RLS safety, and add tests. Do not build full AI explanation yet."
 
 ---
 
