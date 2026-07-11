@@ -534,15 +534,41 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 20
+
+### Card 20: REP-2000 — Basic Financial Reports ✅ DONE
+
+**PLAN_V2 Reference:** REP-2000 (Basic Financial Reports)
+**Type:** Feature / Reporting
+**Priority:** MEDIUM-HIGH
+
+**Completed:**
+- Created `app/reports/` module with Pydantic schemas, service layer, and per-report generators.
+- Added JSON endpoints under `/reports/*` for income statement, balance sheet, cash flow, net worth, and expense analysis.
+- Extended `AccountingService` to support optional `exclude_reversed` and `as_of_date` parameters while preserving existing behavior.
+- Reports reuse posted journal entries and are tenant-scoped via `get_db_with_tenant_context`.
+- Reversals are handled by including both the original and reversing entries so they offset each other.
+- Added 10 integration tests covering all reports, date filtering, reversals, auth, tenant isolation, and RLS.
+- Full test suite: **236 passed, 1 skipped**.
+
+**Remaining:**
+- PDF/Excel export (REP-2001/REP-2002).
+- Advanced BI charts and AI explanations.
+- Family-level report permissions.
+
+**Test results:** 236 passed, 1 skipped
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 20: REP-2000 — Basic Financial Reports
+### Card 21: DOC-2100 — Document OCR / Document Management Enhancement
 
-**Decision:** The accounting engine now contains data from imports, bills, subscriptions, and goal contributions. The next logical step is to expose foundational financial reports (balance sheet, income statement, trial balance, net worth) so users can see the financial picture the ledger contains.
+**Decision:** With core financial data flowing into the ledger and reports now available, the next logical step is to let users attach documents (receipts, statements, invoices) to transactions and extract data via OCR.
 
-**What to tell the coding agent for REP-2000:**
+**What to tell the coding agent for DOC-2100:**
 
-> "Implement REP-2000: Basic Financial Reports. Add service-level report generators for trial balance, balance sheet, income statement, and net worth, all scoped to the current tenant. Add JSON endpoints under `/reports/*` and simple HTML report pages. Reuse `AccountingService` balances and do not bypass RLS."
+> "Implement DOC-2100: Document OCR. Extend the existing document model to support attaching documents to journal entries/bills/subscriptions, add upload endpoints, and add a basic OCR pipeline or integration that extracts date, amount, and merchant from receipt images. Keep tenant/RLS safety and add tests."
 
 ---
 

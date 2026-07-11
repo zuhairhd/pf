@@ -102,7 +102,7 @@
 | ADMIN-1700 to ADMIN-1704 | Admin | Partial (router exists, limited functionality) |
 | BILLING-1800 to BILLING-1803 | Billing | **Missing** (Stripe fields on model only) |
 | API-1900 to API-1903 | API | **Missing** (no public API) |
-| REP-2000 to REP-2005 | Reports | **Missing** (no report generators) |
+| REP-2000 to REP-2005 | Reports | **Done** for REP-2000 (income statement, balance sheet, cash flow, net worth, expense analysis); Partial for remaining reports |
 | DOC-2100 to DOC-2103 | Documents | Partial (model, router, service exist; no OCR) |
 | MOB-2200 to MOB-2202 | Mobile/PWA | **Missing** |
 | FEED-2300 to FEED-2303 | Bank Feeds | **Missing** |
@@ -141,7 +141,7 @@
 
 ## Latest Completed Card
 
-**GOAL-1401A - Goal Contributions Through Accounting Engine** is complete. Family goal contributions can now optionally post balanced journal entries through `AccountingService`, with full account validation, tenant/RLS safety, and idempotent posting. Progress-only contributions continue to work unchanged.
+**REP-2000 - Basic Financial Reports** is complete. The app now exposes tenant-scoped JSON reports for income statement, balance sheet, cash flow, net worth, and expense analysis, all derived from posted journal entries and respecting RLS.
 
 ---
 

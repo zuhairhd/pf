@@ -1,4 +1,4 @@
-﻿# ==========================================================
+# ==========================================================
 # Personal Finance SaaS - Git Ignore
 # ==========================================================
 
@@ -41,6 +41,7 @@ storage/
 generated/
 exports/
 reports/
+!app/reports/
 
 # Alembic / migration temporary files
 *.egg-info/

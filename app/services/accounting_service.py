@@ -37,7 +37,13 @@ class AccountingService:
         await self.db.refresh(account)
         return account
     
-    async def get_account_balance(self, account_id: int, from_date: Optional[date] = None, to_date: Optional[date] = None) -> Decimal:
+    async def get_account_balance(
+        self,
+        account_id: int,
+        from_date: Optional[date] = None,
+        to_date: Optional[date] = None,
+        exclude_reversed: bool = False,
+    ) -> Decimal:
         """Calculate the balance of an account."""
         result = await self.db.execute(
             select(Account).where(Account.id == account_id).where(Account.tenant_id == self.tenant_id)
@@ -45,20 +51,25 @@ class AccountingService:
         account = result.scalar_one_or_none()
         if not account:
             return Decimal('0')
-        
+
         query = select(
             func.coalesce(func.sum(JournalLine.debit), Decimal('0')),
             func.coalesce(func.sum(JournalLine.credit), Decimal('0'))
         ).join(JournalEntry).where(JournalLine.account_id == account_id)
-        
+
         if from_date:
             query = query.where(JournalEntry.date >= from_date)
         if to_date:
             query = query.where(JournalEntry.date <= to_date)
-        
+        if exclude_reversed:
+            # Exclude original entries that have been reversed. Reversal entries
+            # themselves (reversed_entry_id is set) are kept because they offset
+            # the originals.
+            query = query.where(JournalEntry.reversal_entry_id.is_(None))
+
         result = await self.db.execute(query)
         total_debit, total_credit = result.one()
-        
+
         # Calculate net balance based on account type
         if account.account_type in ('Asset', 'Expense'):
             return total_debit - total_credit
@@ -311,36 +322,41 @@ class AccountingService:
             'balanced': total_debit == total_credit,
         }
     
-    async def get_income_statement(self, from_date: date, to_date: date) -> Dict:
+    async def get_income_statement(
+        self,
+        from_date: date,
+        to_date: date,
+        exclude_reversed: bool = False,
+    ) -> Dict:
         """Generate income statement (profit & loss)."""
         # Income
         result = await self.db.execute(
             select(Account).where(Account.tenant_id == self.tenant_id).where(Account.account_type == 'Income')
         )
         income_accounts = result.scalars().all()
-        
+
         income_rows = []
         total_income = Decimal('0')
         for account in income_accounts:
-            balance = await self.get_account_balance(account.id, from_date, to_date)
+            balance = await self.get_account_balance(account.id, from_date, to_date, exclude_reversed)
             income_rows.append({'account': account, 'balance': balance})
             total_income += balance
-        
+
         # Expenses
         result = await self.db.execute(
             select(Account).where(Account.tenant_id == self.tenant_id).where(Account.account_type == 'Expense')
         )
         expense_accounts = result.scalars().all()
-        
+
         expense_rows = []
         total_expenses = Decimal('0')
         for account in expense_accounts:
-            balance = await self.get_account_balance(account.id, from_date, to_date)
+            balance = await self.get_account_balance(account.id, from_date, to_date, exclude_reversed)
             expense_rows.append({'account': account, 'balance': balance})
             total_expenses += balance
-        
+
         surplus = total_income - total_expenses
-        
+
         return {
             'income_rows': income_rows,
             'expense_rows': expense_rows,
@@ -349,49 +365,53 @@ class AccountingService:
             'surplus': surplus,
         }
     
-    async def get_balance_sheet(self) -> Dict:
+    async def get_balance_sheet(
+        self,
+        as_of_date: Optional[date] = None,
+        exclude_reversed: bool = False,
+    ) -> Dict:
         """Generate balance sheet (net worth statement)."""
         # Assets
         result = await self.db.execute(
             select(Account).where(Account.tenant_id == self.tenant_id).where(Account.account_type == 'Asset')
         )
         asset_accounts = result.scalars().all()
-        
+
         asset_rows = []
         total_assets = Decimal('0')
         for account in asset_accounts:
-            balance = await self.get_account_balance(account.id)
+            balance = await self.get_account_balance(account.id, None, as_of_date, exclude_reversed)
             asset_rows.append({'account': account, 'balance': balance})
             total_assets += balance
-        
+
         # Liabilities
         result = await self.db.execute(
             select(Account).where(Account.tenant_id == self.tenant_id).where(Account.account_type == 'Liability')
         )
         liability_accounts = result.scalars().all()
-        
+
         liability_rows = []
         total_liabilities = Decimal('0')
         for account in liability_accounts:
-            balance = await self.get_account_balance(account.id)
+            balance = await self.get_account_balance(account.id, None, as_of_date, exclude_reversed)
             liability_rows.append({'account': account, 'balance': balance})
             total_liabilities += balance
-        
+
         # Equity
         result = await self.db.execute(
             select(Account).where(Account.tenant_id == self.tenant_id).where(Account.account_type == 'Equity')
         )
         equity_accounts = result.scalars().all()
-        
+
         equity_rows = []
         total_equity = Decimal('0')
         for account in equity_accounts:
-            balance = await self.get_account_balance(account.id)
+            balance = await self.get_account_balance(account.id, None, as_of_date, exclude_reversed)
             equity_rows.append({'account': account, 'balance': balance})
             total_equity += balance
-        
+
         net_worth = total_assets - total_liabilities
-        
+
         return {
             'asset_rows': asset_rows,
             'liability_rows': liability_rows,
