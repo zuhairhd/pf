@@ -10,4 +10,4 @@ from app.services.ai_orchestrator import AIOrchestrator
 from app.services.ai_chat import AIChatService
 from app.services.ai_forecast import AIForecastService
 from app.services.notification_service import NotificationService
-from app.services.document_service import DocumentService
+from app.documents.services import DocumentService

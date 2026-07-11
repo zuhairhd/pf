@@ -560,15 +560,43 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 21
+
+### Card 21: DOC-2100 — Document OCR / Document Management Enhancement ✅ DONE
+
+**PLAN_V2 Reference:** DOC-2100 (Document OCR / Document Management Enhancement)  
+**Type:** Feature / Security  
+**Priority:** MEDIUM-HIGH
+
+**Completed:**
+- Hardened the `Document` model with `filename_stored`, `category`, `checksum`, `uploaded_by_user_id`, `status`, `ocr_status`, `ocr_error`, `related_entity_type`, and `related_entity_id`.
+- Created Alembic migration `5e8169dd3017` with safe backfill of `filename_stored` and tenant-aware indexes.
+- Added `app/documents/` package with `storage.py`, `ocr.py`, and `services.py` for validation, safe storage, lightweight OCR, and entity linking.
+- Added document Pydantic schemas in `app/schemas/document.py`.
+- Rewrote `app/routers/documents.py` with auth + tenant-context dependencies and endpoints for upload, list, get, download, update, delete, archive, OCR, link, and unlink.
+- Switched `app/routers/transactions.py` write endpoints to `get_db_with_tenant_context` and `require_tenant_member` to prevent RLS violations when creating journal entries.
+- Added config keys `DOCUMENT_UPLOAD_DIR`, `DOCUMENT_MAX_UPLOAD_MB`, `DOCUMENT_ALLOWED_EXTENSIONS`, `OCR_ENABLED`, and `OCR_DEV_MODE` with `.env.example` placeholders.
+- Added 16 integration tests covering upload validation, OCR, linking, tenant isolation, and RLS.
+- Full test suite: **252 passed, 1 skipped**.
+
+**Remaining:**
+- Full image/PDF OCR engine integration (DOC-2101).
+- AI receipt parsing to extract date, amount, merchant (future).
+- Cloud storage backend (future).
+
+**Test results:** 252 passed, 1 skipped
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 21: DOC-2100 — Document OCR / Document Management Enhancement
+### Card 22: DOC-2101 — OCR Engine Integration
 
-**Decision:** With core financial data flowing into the ledger and reports now available, the next logical step is to let users attach documents (receipts, statements, invoices) to transactions and extract data via OCR.
+**Decision:** DOC-2100 laid the upload, storage, and metadata foundation. The next logical step is to plug in a real OCR backend so images and PDFs yield structured receipt data, while keeping tenant/RLS safety and idempotent processing.
 
-**What to tell the coding agent for DOC-2100:**
+**What to tell the coding agent for DOC-2101:**
 
-> "Implement DOC-2100: Document OCR. Extend the existing document model to support attaching documents to journal entries/bills/subscriptions, add upload endpoints, and add a basic OCR pipeline or integration that extracts date, amount, and merchant from receipt images. Keep tenant/RLS safety and add tests."
+> "Implement DOC-2101: OCR Engine Integration. Add a Tesseract or cloud-vision OCR backend for images/PDFs, extract structured receipt fields (date, amount, merchant), store results safely, and add tests. Keep tenant/RLS isolation, do not commit secrets, and do not disable RLS."
 
 ---
 

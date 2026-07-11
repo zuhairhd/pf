@@ -19,3 +19,9 @@ from app.schemas.ai import ChatRequest, ChatResponse, WhatIfRequest, WhatIfRespo
 from app.schemas.notification import NotificationCreate, NotificationSettingUpdate
 from app.schemas.user import UserCreate as UserProfileCreate, UserUpdate as UserProfileUpdate
 from app.schemas.common import PaginatedResponse, ErrorResponse
+from app.schemas.document import (
+    DocumentCreate,
+    DocumentUpdate,
+    DocumentLinkRequest,
+    DocumentResponse,
+)

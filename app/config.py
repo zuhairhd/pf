@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     # File Storage
     UPLOAD_DIR: str = "uploads"
     MAX_UPLOAD_SIZE_MB: int = 10
+    DOCUMENT_UPLOAD_DIR: str = "uploads/documents"
+    DOCUMENT_MAX_UPLOAD_MB: int = 10
+    DOCUMENT_ALLOWED_EXTENSIONS: str = "pdf,png,jpg,jpeg,webp,txt,csv"
+    OCR_ENABLED: bool = False
+    OCR_DEV_MODE: bool = True
     
     # Stripe
     STRIPE_SECRET_KEY: str = ""

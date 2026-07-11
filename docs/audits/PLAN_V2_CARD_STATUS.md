@@ -103,7 +103,7 @@
 | BILLING-1800 to BILLING-1803 | Billing | **Missing** (Stripe fields on model only) |
 | API-1900 to API-1903 | API | **Missing** (no public API) |
 | REP-2000 to REP-2005 | Reports | **Done** for REP-2000 (income statement, balance sheet, cash flow, net worth, expense analysis); Partial for remaining reports |
-| DOC-2100 to DOC-2103 | Documents | Partial (model, router, service exist; no OCR) |
+| DOC-2100 to DOC-2103 | Documents | **Done** for DOC-2100 (hardened model, upload/storage, OCR metadata, entity linking, tests); Partial for DOC-2101+ |
 | MOB-2200 to MOB-2202 | Mobile/PWA | **Missing** |
 | FEED-2300 to FEED-2303 | Bank Feeds | **Missing** |
 | SCALE-2400 to SCALE-2406 | Scale/Infra | **Missing** (no Docker, no CI/CD) |
@@ -141,7 +141,7 @@
 
 ## Latest Completed Card
 
-**REP-2000 - Basic Financial Reports** is complete. The app now exposes tenant-scoped JSON reports for income statement, balance sheet, cash flow, net worth, and expense analysis, all derived from posted journal entries and respecting RLS.
+**DOC-2100 - Document OCR / Document Management Enhancement** is complete. The document model now supports upload metadata, checksums, OCR-ready fields, and generic entity linking. The `app/documents/` package provides safe tenant-scoped storage, validation, lightweight OCR, and linking to transactions, bills, subscriptions, and goals. The `documents` table remains RLS-protected and the full test suite passes.
 
 ---
 
