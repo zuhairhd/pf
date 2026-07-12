@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional
 
+from app.ai_cfo.engines.debt_optimizer import DebtOptimizer, DebtOptimizerError, DebtStrategyType
 from app.ai_cfo.engines.whatif_simulator import WhatIfError, WhatIfScenarioType, WhatIfSimulator
 from app.ai_cfo.llm.prompts import DEFAULT_DISCLAIMER
 from app.core.security import get_db_with_tenant_context, require_tenant_member
@@ -12,6 +13,9 @@ from app.models import AIInsight, AIReport, AIChatSession, AIChatMessage, User
 from app.schemas.ai import (
     ChatRequest,
     ChatResponse,
+    DebtOptimizerCompareResponse,
+    DebtOptimizerRequest,
+    DebtOptimizerResponse,
     WhatIfCompareRequest,
     WhatIfCompareResponse,
     WhatIfRequest,
@@ -245,6 +249,89 @@ async def what_if_compare(
     return WhatIfCompareResponse(
         results=results,
         summary=summary,
+        disclaimer=DEFAULT_DISCLAIMER,
+    )
+
+
+
+# ---------------------------------------------------------------------------
+# Debt Optimizer (AI-1211)
+# ---------------------------------------------------------------------------
+
+_STRATEGY_CATALOG = [
+    {
+        "strategy_type": DebtStrategyType.AVALANCHE.value,
+        "label": "Avalanche",
+        "description": "Pay off highest-interest debt first to minimize total interest.",
+    },
+    {
+        "strategy_type": DebtStrategyType.SNOWBALL.value,
+        "label": "Snowball",
+        "description": "Pay off smallest balance first for quick wins and motivation.",
+    },
+    {
+        "strategy_type": DebtStrategyType.CUSTOM_ORDER.value,
+        "label": "Custom order",
+        "description": "Pay off debts in a user-defined order.",
+    },
+]
+
+
+def _handle_debt_optimizer_error(exc: DebtOptimizerError) -> None:
+    raise HTTPException(status_code=exc.status_code, detail=exc.message)
+
+
+@router.get("/debt-optimizer/strategies")
+async def debt_optimizer_strategies(
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Return available debt payoff strategies."""
+    return {"strategies": _STRATEGY_CATALOG}
+
+
+@router.post("/debt-optimizer/simulate", response_model=DebtOptimizerResponse)
+async def debt_optimizer_simulate(
+    request: DebtOptimizerRequest,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Run a single debt payoff optimization strategy."""
+    optimizer = DebtOptimizer(db, user.organization_id, user=user)
+    try:
+        result = await optimizer.optimize(
+            strategy=DebtStrategyType(request.strategy),
+            extra_monthly_payment=request.extra_monthly_payment,
+            loan_ids=request.loan_ids,
+            account_ids=request.account_ids,
+            custom_order=request.custom_order,
+            include_narrative=request.include_narrative,
+        )
+    except DebtOptimizerError as exc:
+        _handle_debt_optimizer_error(exc)
+    return DebtOptimizerResponse(result=result, disclaimer=DEFAULT_DISCLAIMER)
+
+
+@router.post("/debt-optimizer/compare", response_model=DebtOptimizerCompareResponse)
+async def debt_optimizer_compare(
+    request: DebtOptimizerRequest,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Compare avalanche vs snowball payoff strategies."""
+    optimizer = DebtOptimizer(db, user.organization_id, user=user)
+    try:
+        comparison = await optimizer.compare(
+            extra_monthly_payment=request.extra_monthly_payment,
+            loan_ids=request.loan_ids,
+            account_ids=request.account_ids,
+            include_narrative=request.include_narrative,
+        )
+    except DebtOptimizerError as exc:
+        _handle_debt_optimizer_error(exc)
+    return DebtOptimizerCompareResponse(
+        results=comparison["results"],
+        recommendation=comparison["recommendation"],
         disclaimer=DEFAULT_DISCLAIMER,
     )
 

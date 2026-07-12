@@ -164,6 +164,37 @@ def what_if_structured_prompt(result: dict[str, Any]) -> list[dict[str, str]]:
     ]
 
 
+def debt_optimizer_structured_prompt(result: dict[str, Any]) -> list[dict[str, str]]:
+    """Build a prompt for a structured debt optimization result.
+
+    Only aggregated debt metadata is sent — no raw account numbers or
+    personally identifiable details.
+    """
+    user_content = (
+        "Explain the following debt payoff strategy in 3-5 concise sentences. "
+        "Be supportive and educational. Do not make definitive predictions, "
+        "do not recommend specific financial products, and mention assumptions.\n\n"
+        f"Strategy: {result.get('strategy')}\n"
+        f"Currency: {result.get('currency')}\n"
+        f"Total debt balance: {result.get('total_balance')}\n"
+        f"Total minimum payment: {result.get('total_minimum_payment')}\n"
+        f"Extra monthly payment: {result.get('extra_monthly_payment')}\n"
+        f"Projected payoff months: {result.get('payoff_months')}\n"
+        f"Baseline payoff months: {result.get('baseline_months')}\n"
+        f"Months saved: {result.get('months_saved')}\n"
+        f"Estimated total interest: {result.get('total_interest')}\n"
+        f"Estimated interest saved: {result.get('interest_saved')}\n"
+        f"Confidence: {result.get('confidence')}\n"
+    )
+    warnings = result.get("warnings") or []
+    if warnings:
+        user_content += "Warnings:\n" + "\n".join(f"- {w['message']}" for w in warnings) + "\n"
+    return [
+        _system_prompt(),
+        {"role": "user", "content": user_content},
+    ]
+
+
 __all__ = [
     "DEFAULT_DISCLAIMER",
     "chat_prompt",
@@ -171,4 +202,5 @@ __all__ = [
     "daily_brief_prompt",
     "what_if_prompt",
     "what_if_structured_prompt",
+    "debt_optimizer_structured_prompt",
 ]

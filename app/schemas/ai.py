@@ -167,3 +167,69 @@ class WhatIfCompareResponse(BaseModel):
     results: List[WhatIfResult]
     summary: dict[str, Any]
     disclaimer: str
+
+
+# ---------------------------------------------------------------------------
+# Debt Optimizer schemas (AI-1211)
+# ---------------------------------------------------------------------------
+
+
+class DebtOptimizerDebtItem(BaseModel):
+    id: int
+    name: str
+    source: str
+    balance: Decimal
+    annual_rate: Decimal
+    minimum_payment: Decimal
+    payoff_month: Optional[int] = None
+
+
+class DebtOptimizerMonth(BaseModel):
+    month_number: int
+    total_paid: Decimal
+    total_interest: Decimal
+    total_principal: Decimal
+    remaining_balance: Decimal
+
+
+class DebtOptimizerRequest(BaseModel):
+    strategy: Literal["avalanche", "snowball", "custom_order"] = "avalanche"
+    extra_monthly_payment: Decimal = Field(Decimal("0"), ge=0)
+    loan_ids: Optional[List[int]] = None
+    account_ids: Optional[List[int]] = None
+    custom_order: Optional[List[int]] = None
+    include_narrative: bool = False
+
+
+class DebtOptimizerResult(BaseModel):
+    strategy: str
+    currency: str
+    total_balance: Decimal
+    total_minimum_payment: Decimal
+    extra_monthly_payment: Decimal
+    debt_to_income_ratio: Optional[str] = None
+    payoff_months: int
+    baseline_months: int
+    months_saved: int
+    total_paid: Decimal
+    total_interest: Decimal
+    baseline_total_interest: Decimal
+    interest_saved: Decimal
+    debt_count: int
+    payoff_order: List[DebtOptimizerDebtItem]
+    assumptions: List[WhatIfAssumption]
+    warnings: List[WhatIfWarning]
+    confidence: str
+    monthly_schedule: List[DebtOptimizerMonth]
+    narrative: str
+
+
+class DebtOptimizerResponse(BaseModel):
+    result: DebtOptimizerResult
+    disclaimer: str
+
+
+class DebtOptimizerCompareResponse(BaseModel):
+    results: List[DebtOptimizerResult]
+    recommendation: str
+    disclaimer: str

@@ -10,9 +10,9 @@
 
 ## Executive Summary
 
-Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), and AI-1214 (What-If Simulator) are **COMPLETE**. The database has 43 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and users can run read-only financial simulations through the AI CFO.
+Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), and AI-1211 (Debt Optimizer) are **COMPLETE**. The database has 43 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and users can run read-only debt and financial simulations through the AI CFO.
 
-The next card should be **AI-1211 — Debt Optimizer**, the next focused AI CFO engine.
+The next card should be **AI-1212 — Savings Optimizer**, the next focused AI CFO engine.
 
 ---
 
@@ -646,13 +646,41 @@ Card 1 (Database) ✅
 
 ## Exact Recommended Next Card
 
-### Card 24: AI-1211 — Debt Optimizer
+### Card 25: AI-1212 — Savings Optimizer
 
-**Decision:** With the What-If Simulator complete, the next logical step is a focused debt-optimization engine. It will analyze the user's loans and credit obligations, recommend avalanche/snowball payoff strategies, and integrate with the simulator so users can model "what-if I pay extra?" scenarios.
+**Decision:** With the Debt Optimizer complete, the next logical step is a focused savings-optimization engine. It will analyze the user's current savings rate, emergency-fund target, and income/expense trends, then recommend how much to save and where. It can also integrate with the What-If Simulator so users can model "what-if I save an extra RO X per month?" scenarios.
 
-**What to tell the coding agent for AI-1211:**
+**What to tell the coding agent for AI-1212:**
 
-> "Implement AI-1211: Debt Optimizer. Add a read-only engine and API endpoint that ranks the user's liabilities by interest rate or balance, calculates total interest and payoff timeline, and recommends avalanche/snowball strategies. Keep tenant/RLS safety, respect private account visibility, and add tests. Do not build full AI recommendation engine yet."
+> "Implement AI-1212: Savings Optimizer. Add a read-only engine and API endpoint that computes emergency-fund targets, savings-rate gaps, and projected time-to-goal using existing asset/income data. Keep tenant/RLS safety, respect private account visibility, and add tests. Do not build full AI recommendation engine yet."
+
+---
+
+## Completed Card 24
+
+### Card 24: AI-1211 — Debt Optimizer ✅ DONE
+
+**PLAN_V2 Reference:** AI-1211 (Debt Optimizer)  
+**Type:** Feature / AI CFO  
+**Priority:** HIGH
+
+**Completed:**
+- Created `app/ai_cfo/engines/debt_optimizer.py` with deterministic, read-only amortization projections.
+- Supported strategies: avalanche, snowball, and custom order.
+- Added structured Pydantic schemas in `app/schemas/ai.py` and a dedicated LLM prompt in `app/ai_cfo/llm/prompts.py`.
+- Added `/ai/debt-optimizer/strategies`, `/ai/debt-optimizer/simulate`, and `/ai/debt-optimizer/compare` endpoints in `app/routers/ai.py`.
+- Validated account access through `FamilyAccountAccessService`; cross-tenant loans/accounts return `404`/`403`.
+- Implemented deterministic fallback narrative and optional LLM narrative with cost-control and safety filtering.
+- Added 15 integration tests covering strategies, extra payment impact, validation, read-only safety, tenant isolation, private account rejection, and RLS.
+- Patched `app/tests/conftest.py` to filter the flaky Windows/anyio `RuntimeError("Event loop is closed")` teardown race.
+- Full test suite: **294 passed, 1 skipped**.
+
+**Remaining:**
+- Dedicated debt-optimizer UI template/page.
+- Variable-rate/fee modeling.
+- Integration with the What-If Simulator for extra-payment modeling.
+
+**Test results:** 294 passed, 1 skipped
 
 ---
 

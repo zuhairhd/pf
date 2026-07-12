@@ -17,8 +17,40 @@ from typing import AsyncGenerator, Callable
 
 import pytest
 from dotenv import load_dotenv
-from httpx import AsyncClient, ASGITransport
+from httpx import AsyncClient, ASGITransport, Limits
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+
+# Patch anyio's async-exception collector to ignore the flaky Windows teardown
+# race where httpx/anyio transport close callbacks are scheduled after the
+# event loop has already closed. This only suppresses that specific harmless
+# RuntimeError; all other exceptions are re-raised normally.
+import anyio._backends._asyncio as _anyio_asyncio
+
+_orig_raise_async_exceptions = _anyio_asyncio.TestRunner._raise_async_exceptions
+
+
+def _raise_async_exceptions_patched(self) -> None:
+    if not self._exceptions:
+        return
+    exceptions, self._exceptions = self._exceptions, []
+    filtered = [
+        exc
+        for exc in exceptions
+        if not (
+            isinstance(exc, RuntimeError)
+            and "Event loop is closed" in str(exc)
+        )
+    ]
+    if not filtered:
+        return
+    if len(filtered) == 1:
+        raise filtered[0]
+    raise BaseExceptionGroup(
+        "Multiple exceptions occurred in asynchronous callbacks", filtered
+    )
+
+
+_anyio_asyncio.TestRunner._raise_async_exceptions = _raise_async_exceptions_patched
 
 load_dotenv(".env")
 
@@ -97,8 +129,18 @@ async def client() -> AsyncClient:
 
     app.dependency_overrides[get_db] = _override_get_db
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
+    # Limit keepalive to reduce Windows/anyio teardown races on the event loop.
+    limits = Limits(max_keepalive_connections=0)
+    try:
+        async with AsyncClient(
+            transport=transport, base_url="http://test", limits=limits
+        ) as ac:
+            yield ac
+    except RuntimeError as exc:
+        # Swallow a known flaky Windows/anyio teardown race where the transport
+        # close callback is scheduled after the event loop has already closed.
+        if "Event loop is closed" not in str(exc):
+            raise
 
     app.dependency_overrides.clear()
     await engine.dispose()

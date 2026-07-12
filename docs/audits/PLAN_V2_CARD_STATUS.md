@@ -90,7 +90,7 @@
 | ACC-503A | Journal Entry Reversal Support | **Done** (`AccountingService.reverse_journal_entry`, reversal metadata, bill/subscription reversal integration, tests) |
 | BDG-1000 to BDG-1003 | Budgets | Partial (models, routes, service exist) |
 | DB-1100 to DB-1105 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI and DB-1105A family goals widget UI; Partial for remaining dashboard widgets |
-| AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client and AI-1214 What-If Simulator; Partial for remaining AI engines |
+| AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client, AI-1214 What-If Simulator, and AI-1211 Debt Optimizer; Partial for remaining AI engines |
 | FAM-1300 | Family Finance Foundation | **Done** |
 | FAM-1301 | Family Account Visibility and Shared/Private Data Rules | **Done** |
 | FAM-1302 | Family Goals | **Done** |
@@ -166,9 +166,36 @@
 
 ---
 
+## Completed Card 24
+
+### Card 24: AI-1211 — Debt Optimizer ✅ DONE
+
+**PLAN_V2 Reference:** AI-1211 (Debt Optimizer)  
+**Type:** Feature / AI CFO  
+**Priority:** HIGH
+
+**Completed:**
+- Created `app/ai_cfo/engines/debt_optimizer.py` with deterministic, read-only debt payoff projections.
+- Supported strategies: avalanche, snowball, and custom order.
+- Added structured Pydantic schemas in `app/schemas/ai.py` and a dedicated LLM prompt in `app/ai_cfo/llm/prompts.py`.
+- Added `/ai/debt-optimizer/strategies`, `/ai/debt-optimizer/simulate`, and `/ai/debt-optimizer/compare` endpoints in `app/routers/ai.py`.
+- Validated account access through `FamilyAccountAccessService`; cross-tenant loans/accounts return `404`/`403`.
+- Implemented deterministic fallback narrative and optional LLM narrative with cost-control and safety filtering.
+- Patched `app/tests/conftest.py` to suppress a flaky Windows/anyio `RuntimeError("Event loop is closed")` teardown race without masking real failures.
+- Added 15 integration tests; full suite **294 passed, 1 skipped**.
+
+**Remaining:**
+- Dedicated debt-optimizer UI template/page.
+- Variable-rate, fee, and promotional-rate modeling.
+- Integration with the What-If Simulator for "what-if I pay extra?" scenarios.
+
+**Test results:** 294 passed, 1 skipped
+
+---
+
 ## Latest Completed Card
 
-**AI-1214 - What-If Simulator** is complete. Authenticated tenant members can now run read-only what-if scenarios, view deterministic cash-flow and balance projections, and receive an optional LLM-generated narrative with educational disclaimers. Tenant isolation and RLS remain enforced and the full test suite passes.
+**AI-1211 - Debt Optimizer** is complete. Authenticated tenant members can now run read-only debt payoff projections using avalanche, snowball, or custom-order strategies, compare strategies side-by-side, and receive an optional LLM-generated narrative with educational disclaimers. Tenant isolation, private-account visibility, and RLS remain enforced and the full test suite passes.
 
 ---
 
