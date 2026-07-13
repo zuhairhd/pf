@@ -90,7 +90,7 @@
 | ACC-503A | Journal Entry Reversal Support | **Done** (`AccountingService.reverse_journal_entry`, reversal metadata, bill/subscription reversal integration, tests) |
 | BDG-1000 to BDG-1003 | Budgets | Partial (models, routes, service exist) |
 | DB-1100 to DB-1105 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI and DB-1105A family goals widget UI; Partial for remaining dashboard widgets |
-| AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client, AI-1214 What-If Simulator, and AI-1211 Debt Optimizer; Partial for remaining AI engines |
+| AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client, AI-1214 What-If Simulator, AI-1211 Debt Optimizer, and AI-1212 Savings Optimizer; Partial for remaining AI engines |
 | FAM-1300 | Family Finance Foundation | **Done** |
 | FAM-1301 | Family Account Visibility and Shared/Private Data Rules | **Done** |
 | FAM-1302 | Family Goals | **Done** |
@@ -193,9 +193,36 @@
 
 ---
 
+## Completed Card 25
+
+### Card 25: AI-1212 — Savings Optimizer ✅ DONE
+
+**PLAN_V2 Reference:** AI-1212 (Savings Optimizer)  
+**Type:** Feature / AI CFO  
+**Priority:** HIGH
+
+**Completed:**
+- Created `app/ai_cfo/engines/savings_optimizer.py` with deterministic, read-only savings analysis and projections.
+- Supported modes: emergency fund analysis, monthly savings capacity, goal allocation, reduce spending, and strategy comparison.
+- Added goal allocation strategies: equal_split, priority_first, closest_deadline, lowest_gap_first.
+- Added structured Pydantic schemas in `app/schemas/ai.py` and a dedicated LLM prompt in `app/ai_cfo/llm/prompts.py`.
+- Added `/ai/savings-optimizer/strategies`, `/ai/savings-optimizer/simulate`, and `/ai/savings-optimizer/compare` endpoints in `app/routers/ai.py`.
+- Validated account access through `FamilyAccountAccessService` and goal access through `FamilyGoalService`; cross-tenant resources return `404`/`403`.
+- Implemented deterministic fallback narrative and optional LLM narrative with cost-control and safety filtering.
+- Added 19 integration tests; full suite **313 passed, 1 skipped**.
+
+**Remaining:**
+- Dedicated savings-optimizer UI template/page.
+- Essential vs. discretionary expense classification for emergency funds.
+- Integration with the What-If Simulator for "what-if I save more?" scenarios.
+
+**Test results:** 313 passed, 1 skipped
+
+---
+
 ## Latest Completed Card
 
-**AI-1211 - Debt Optimizer** is complete. Authenticated tenant members can now run read-only debt payoff projections using avalanche, snowball, or custom-order strategies, compare strategies side-by-side, and receive an optional LLM-generated narrative with educational disclaimers. Tenant isolation, private-account visibility, and RLS remain enforced and the full test suite passes.
+**AI-1212 - Savings Optimizer** is complete. Authenticated tenant members can now run read-only savings analyses including emergency-fund targets, savings capacity, goal allocation, spending-reduction guidance, and strategy comparison, with optional LLM-generated narratives and educational disclaimers. Tenant isolation, private account/goal visibility, and RLS remain enforced and the full test suite passes.
 
 ---
 

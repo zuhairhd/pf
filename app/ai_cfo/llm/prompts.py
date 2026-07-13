@@ -195,6 +195,47 @@ def debt_optimizer_structured_prompt(result: dict[str, Any]) -> list[dict[str, s
     ]
 
 
+def savings_optimizer_structured_prompt(result: dict[str, Any]) -> list[dict[str, str]]:
+    """Build a prompt for a structured savings optimization result.
+
+    Only aggregated savings metadata is sent — no raw transaction lists or
+    personally identifiable details.
+    """
+    user_content = (
+        "Explain the following savings guidance in 3-5 concise sentences. "
+        "Be supportive and educational. Do not make definitive predictions, "
+        "do not recommend specific investment products, and mention assumptions.\n\n"
+        f"Mode: {result.get('mode')}\n"
+        f"Currency: {result.get('currency')}\n"
+    )
+    if result.get("target_amount") is not None:
+        user_content += f"Emergency fund target: {result.get('target_amount')}\n"
+    if result.get("current_savings") is not None:
+        user_content += f"Current savings: {result.get('current_savings')}\n"
+    if result.get("gap_amount") is not None:
+        user_content += f"Gap: {result.get('gap_amount')}\n"
+    if result.get("avg_monthly_net_flow") is not None:
+        user_content += f"Average monthly net flow: {result.get('avg_monthly_net_flow')}\n"
+    if result.get("current_savings_rate_percent") is not None:
+        user_content += f"Current savings rate: {result.get('current_savings_rate_percent')}%\n"
+    if result.get("monthly_available_savings") is not None:
+        user_content += f"Monthly available savings: {result.get('monthly_available_savings')}\n"
+    if result.get("total_allocated") is not None:
+        user_content += f"Total allocated to goals: {result.get('total_allocated')}\n"
+    if result.get("required_spending_reduction") is not None:
+        user_content += f"Required spending reduction: {result.get('required_spending_reduction')}\n"
+    if result.get("recommended_strategy") is not None:
+        user_content += f"Recommended strategy: {result.get('recommended_strategy')}\n"
+    user_content += f"Confidence: {result.get('confidence')}\n"
+    warnings = result.get("warnings") or []
+    if warnings:
+        user_content += "Warnings:\n" + "\n".join(f"- {w['message']}" for w in warnings) + "\n"
+    return [
+        _system_prompt(),
+        {"role": "user", "content": user_content},
+    ]
+
+
 __all__ = [
     "DEFAULT_DISCLAIMER",
     "chat_prompt",
@@ -203,4 +244,5 @@ __all__ = [
     "what_if_prompt",
     "what_if_structured_prompt",
     "debt_optimizer_structured_prompt",
+    "savings_optimizer_structured_prompt",
 ]

@@ -10,9 +10,9 @@
 
 ## Executive Summary
 
-Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), and AI-1211 (Debt Optimizer) are **COMPLETE**. The database has 43 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and users can run read-only debt and financial simulations through the AI CFO.
+Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), and AI-1212 (Savings Optimizer) are **COMPLETE**. The database has 43 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and users can run read-only debt, savings, and financial simulations through the AI CFO.
 
-The next card should be **AI-1212 — Savings Optimizer**, the next focused AI CFO engine.
+The next card should be **AI-1213 — Goal Planner**, the next focused AI CFO engine.
 
 ---
 
@@ -646,13 +646,41 @@ Card 1 (Database) ✅
 
 ## Exact Recommended Next Card
 
-### Card 25: AI-1212 — Savings Optimizer
+### Card 26: AI-1213 — Goal Planner
 
-**Decision:** With the Debt Optimizer complete, the next logical step is a focused savings-optimization engine. It will analyze the user's current savings rate, emergency-fund target, and income/expense trends, then recommend how much to save and where. It can also integrate with the What-If Simulator so users can model "what-if I save an extra RO X per month?" scenarios.
+**Decision:** With the Savings Optimizer complete, the next logical step is a focused goal-planning engine. It will analyze active goals alongside income and expense trends, recommend priority ordering and contribution adjustments, and estimate feasibility. It can integrate with the What-If Simulator so users can model "what-if I change my goal contributions?" scenarios.
 
-**What to tell the coding agent for AI-1212:**
+**What to tell the coding agent for AI-1213:**
 
-> "Implement AI-1212: Savings Optimizer. Add a read-only engine and API endpoint that computes emergency-fund targets, savings-rate gaps, and projected time-to-goal using existing asset/income data. Keep tenant/RLS safety, respect private account visibility, and add tests. Do not build full AI recommendation engine yet."
+> "Implement AI-1213: Goal Planner. Add a read-only engine and API endpoint that analyzes visible goals, income/expense trends, and timelines to recommend priorities and contribution adjustments. Keep tenant/RLS safety, respect private goal visibility, and add tests. Do not build full AI recommendation engine yet."
+
+---
+
+## Completed Card 25
+
+### Card 25: AI-1212 — Savings Optimizer ✅ DONE
+
+**PLAN_V2 Reference:** AI-1212 (Savings Optimizer)  
+**Type:** Feature / AI CFO  
+**Priority:** HIGH
+
+**Completed:**
+- Created `app/ai_cfo/engines/savings_optimizer.py` with deterministic, read-only savings analysis and projections.
+- Supported modes: emergency_fund, savings_capacity, goal_allocation, reduce_spending, compare_strategies.
+- Added goal allocation strategies: equal_split, priority_first, closest_deadline, lowest_gap_first.
+- Added structured Pydantic schemas in `app/schemas/ai.py` and a dedicated LLM prompt in `app/ai_cfo/llm/prompts.py`.
+- Added `/ai/savings-optimizer/strategies`, `/ai/savings-optimizer/simulate`, and `/ai/savings-optimizer/compare` endpoints in `app/routers/ai.py`.
+- Validated account access through `FamilyAccountAccessService` and goal access through `FamilyGoalService`; cross-tenant resources return `404`/`403`.
+- Implemented deterministic fallback narrative and optional LLM narrative with cost-control and safety filtering.
+- Added 19 integration tests covering all modes, validation, permissions, read-only safety, tenant isolation, and RLS.
+- Full test suite: **313 passed, 1 skipped**.
+
+**Remaining:**
+- Dedicated savings-optimizer UI template/page.
+- Essential vs. discretionary expense classification.
+- Integration with the What-If Simulator for extra-savings modeling.
+
+**Test results:** 313 passed, 1 skipped
 
 ---
 

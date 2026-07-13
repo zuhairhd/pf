@@ -233,3 +233,168 @@ class DebtOptimizerCompareResponse(BaseModel):
     results: List[DebtOptimizerResult]
     recommendation: str
     disclaimer: str
+
+
+# ---------------------------------------------------------------------------
+# Savings Optimizer schemas (AI-1212)
+# ---------------------------------------------------------------------------
+
+
+class SavingsOptimizerStrategyMeta(BaseModel):
+    mode: str
+    label: str
+    description: str
+
+
+class SavingsOptimizerRequest(BaseModel):
+    mode: Literal[
+        "emergency_fund",
+        "savings_capacity",
+        "goal_allocation",
+        "reduce_spending",
+        "compare_strategies",
+    ]
+    months: int = Field(12, ge=1, le=120)
+    include_narrative: bool = False
+    target_months_of_expenses: Optional[Decimal] = Field(None, ge=0)
+    monthly_contribution: Optional[Decimal] = Field(None, ge=0)
+    account_id: Optional[int] = None
+    target_savings_rate: Optional[Decimal] = Field(None, ge=0, le=100)
+    monthly_available_savings: Optional[Decimal] = Field(None, gt=0)
+    strategy: Literal["equal_split", "priority_first", "closest_deadline", "lowest_gap_first"] = "equal_split"
+    goal_ids: Optional[List[int]] = None
+    target_monthly_savings: Optional[Decimal] = Field(None, gt=0)
+
+
+class SavingsProjectionMonth(BaseModel):
+    month_number: int
+    month_label: str
+    balance: Decimal
+    cumulative_savings: Decimal
+    monthly_addition: Decimal
+
+
+class SavingsGoalAllocationItem(BaseModel):
+    goal_id: int
+    goal_name: str
+    target_amount: Decimal
+    current_amount: Decimal
+    remaining_amount: Decimal
+    monthly_contribution: Decimal
+    recommended_allocation: Decimal
+    new_monthly_contribution: Decimal
+    projected_progress_percent: str
+    months_to_completion: Optional[int] = None
+    priority: int
+    target_date: Optional[str] = None
+
+
+class EmergencyFundResult(BaseModel):
+    mode: str
+    currency: str
+    target_months_of_expenses: str
+    monthly_expenses: Decimal
+    target_amount: Decimal
+    current_savings: Decimal
+    gap_amount: Decimal
+    months_to_target: Optional[int] = None
+    monthly_contribution: Decimal
+    risk_level: str
+    projected_emergency_balance: Decimal
+    monthly_projections: List[SavingsProjectionMonth]
+    assumptions: List[WhatIfAssumption]
+    warnings: List[WhatIfWarning]
+    confidence: str
+    narrative: str
+
+
+class SavingsCapacityResult(BaseModel):
+    mode: str
+    currency: str
+    avg_monthly_income: Decimal
+    avg_monthly_expenses: Decimal
+    avg_monthly_net_flow: Decimal
+    current_savings_rate_percent: str
+    target_savings_rate_percent: Optional[str] = None
+    target_monthly_savings: Optional[Decimal] = None
+    savings_gap: Optional[Decimal] = None
+    suggested_monthly_savings_min: Decimal
+    suggested_monthly_savings_max: Decimal
+    projected_total_savings: Decimal
+    monthly_projections: List[SavingsProjectionMonth]
+    assumptions: List[WhatIfAssumption]
+    warnings: List[WhatIfWarning]
+    confidence: str
+    narrative: str
+
+
+class GoalAllocationResult(BaseModel):
+    mode: str
+    currency: str
+    strategy: str
+    monthly_available_savings: Decimal
+    total_allocated: Decimal
+    unallocated: Decimal
+    goal_count: int
+    goals: List[SavingsGoalAllocationItem]
+    projected_total_progress: Decimal
+    monthly_projections: List[SavingsProjectionMonth]
+    assumptions: List[WhatIfAssumption]
+    warnings: List[WhatIfWarning]
+    confidence: str
+    narrative: str
+
+
+class ReduceSpendingResult(BaseModel):
+    mode: str
+    currency: str
+    avg_monthly_income: Decimal
+    avg_monthly_expenses: Decimal
+    target_monthly_savings: Decimal
+    current_monthly_savings_capacity: Decimal
+    required_spending_reduction: Decimal
+    expense_reduction_candidates: List[dict[str, Any]]
+    projected_total_savings: Decimal
+    monthly_projections: List[SavingsProjectionMonth]
+    assumptions: List[WhatIfAssumption]
+    warnings: List[WhatIfWarning]
+    confidence: str
+    narrative: str
+
+
+class StrategyComparisonItem(BaseModel):
+    strategy: str
+    total_allocated: Decimal
+    unallocated: Decimal
+    projected_total_progress: Decimal
+    goal_count: int
+
+
+class CompareStrategiesResult(BaseModel):
+    mode: str
+    currency: str
+    monthly_available_savings: Decimal
+    goal_count: int
+    strategies: List[StrategyComparisonItem]
+    recommended_strategy: str
+    recommendation: str
+    assumptions: List[WhatIfAssumption]
+    warnings: List[WhatIfWarning]
+    confidence: str
+    narrative: str
+
+
+class SavingsOptimizerResponse(BaseModel):
+    result: Union[
+        EmergencyFundResult,
+        SavingsCapacityResult,
+        GoalAllocationResult,
+        ReduceSpendingResult,
+        CompareStrategiesResult,
+    ]
+    disclaimer: str
+
+
+class SavingsOptimizerCompareResponse(BaseModel):
+    result: CompareStrategiesResult
+    disclaimer: str

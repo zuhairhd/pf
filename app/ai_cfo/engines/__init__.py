@@ -5,6 +5,12 @@ from app.ai_cfo.engines.debt_optimizer import (
     DebtOptimizerError,
     DebtStrategyType,
 )
+from app.ai_cfo.engines.savings_optimizer import (
+    AllocationStrategy,
+    SavingsModeType,
+    SavingsOptimizer,
+    SavingsOptimizerError,
+)
 from app.ai_cfo.engines.whatif_simulator import (
     Confidence,
     WhatIfError,
@@ -13,10 +19,14 @@ from app.ai_cfo.engines.whatif_simulator import (
 )
 
 __all__ = [
+    "AllocationStrategy",
     "Confidence",
     "DebtOptimizer",
     "DebtOptimizerError",
     "DebtStrategyType",
+    "SavingsModeType",
+    "SavingsOptimizer",
+    "SavingsOptimizerError",
     "WhatIfError",
     "WhatIfScenarioType",
     "WhatIfSimulator",

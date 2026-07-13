@@ -6,6 +6,12 @@ from sqlalchemy import select
 from typing import Optional
 
 from app.ai_cfo.engines.debt_optimizer import DebtOptimizer, DebtOptimizerError, DebtStrategyType
+from app.ai_cfo.engines.savings_optimizer import (
+    AllocationStrategy,
+    SavingsModeType,
+    SavingsOptimizer,
+    SavingsOptimizerError,
+)
 from app.ai_cfo.engines.whatif_simulator import WhatIfError, WhatIfScenarioType, WhatIfSimulator
 from app.ai_cfo.llm.prompts import DEFAULT_DISCLAIMER
 from app.core.security import get_db_with_tenant_context, require_tenant_member
@@ -16,6 +22,10 @@ from app.schemas.ai import (
     DebtOptimizerCompareResponse,
     DebtOptimizerRequest,
     DebtOptimizerResponse,
+    SavingsOptimizerCompareResponse,
+    SavingsOptimizerRequest,
+    SavingsOptimizerResponse,
+    SavingsOptimizerStrategyMeta,
     WhatIfCompareRequest,
     WhatIfCompareResponse,
     WhatIfRequest,
@@ -334,6 +344,85 @@ async def debt_optimizer_compare(
         recommendation=comparison["recommendation"],
         disclaimer=DEFAULT_DISCLAIMER,
     )
+
+
+# ---------------------------------------------------------------------------
+# Savings Optimizer (AI-1212)
+# ---------------------------------------------------------------------------
+
+_SAVINGS_STRATEGY_CATALOG = [
+    SavingsOptimizerStrategyMeta(
+        mode=SavingsModeType.EMERGENCY_FUND.value,
+        label="Emergency fund analysis",
+        description="Calculate emergency-fund target, gap, and months to reach it.",
+    ),
+    SavingsOptimizerStrategyMeta(
+        mode=SavingsModeType.SAVINGS_CAPACITY.value,
+        label="Monthly savings capacity",
+        description="Estimate how much you can save each month based on recent income and expenses.",
+    ),
+    SavingsOptimizerStrategyMeta(
+        mode=SavingsModeType.GOAL_ALLOCATION.value,
+        label="Goal-based savings allocation",
+        description="Allocate monthly savings across goals using a chosen strategy.",
+    ),
+    SavingsOptimizerStrategyMeta(
+        mode=SavingsModeType.REDUCE_SPENDING.value,
+        label="Reduce spending to save more",
+        description="Find how much spending must be cut to hit a target monthly savings amount.",
+    ),
+    SavingsOptimizerStrategyMeta(
+        mode=SavingsModeType.COMPARE_STRATEGIES.value,
+        label="Compare savings strategies",
+        description="Compare goal allocation strategies side-by-side.",
+    ),
+]
+
+
+def _handle_savings_optimizer_error(exc: SavingsOptimizerError) -> None:
+    raise HTTPException(status_code=exc.status_code, detail=exc.message)
+
+
+@router.get("/savings-optimizer/strategies")
+async def savings_optimizer_strategies(
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Return available savings optimization modes."""
+    return {"strategies": _SAVINGS_STRATEGY_CATALOG}
+
+
+@router.post("/savings-optimizer/simulate", response_model=SavingsOptimizerResponse)
+async def savings_optimizer_simulate(
+    request: SavingsOptimizerRequest,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Run a single savings optimization mode."""
+    optimizer = SavingsOptimizer(db, user.organization_id, user=user)
+    try:
+        result = await optimizer.optimize(
+            mode=SavingsModeType(request.mode),
+            request=request.model_dump(),
+        )
+    except SavingsOptimizerError as exc:
+        _handle_savings_optimizer_error(exc)
+    return SavingsOptimizerResponse(result=result, disclaimer=DEFAULT_DISCLAIMER)
+
+
+@router.post("/savings-optimizer/compare", response_model=SavingsOptimizerCompareResponse)
+async def savings_optimizer_compare(
+    request: SavingsOptimizerRequest,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Compare goal allocation strategies."""
+    optimizer = SavingsOptimizer(db, user.organization_id, user=user)
+    try:
+        result = await optimizer.compare(request.model_dump())
+    except SavingsOptimizerError as exc:
+        _handle_savings_optimizer_error(exc)
+    return SavingsOptimizerCompareResponse(result=result, disclaimer=DEFAULT_DISCLAIMER)
 
 
 @router.get("/reports/daily")
