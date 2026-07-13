@@ -398,3 +398,174 @@ class SavingsOptimizerResponse(BaseModel):
 class SavingsOptimizerCompareResponse(BaseModel):
     result: CompareStrategiesResult
     disclaimer: str
+
+
+# ---------------------------------------------------------------------------
+# Goal Planner schemas (AI-1213)
+# ---------------------------------------------------------------------------
+
+
+class GoalPlannerModeMeta(BaseModel):
+    mode: str
+    label: str
+    description: str
+
+
+class GoalPlannerStrategyMeta(BaseModel):
+    strategy: str
+    label: str
+    description: str
+
+
+class GoalPlanItem(BaseModel):
+    goal_id: int
+    goal_name: str
+    target_amount: Decimal
+    current_amount: Decimal
+    remaining_amount: Decimal
+    monthly_contribution: Decimal
+    required_monthly_contribution: Optional[Decimal] = None
+    months_to_completion: Optional[int] = None
+    projected_completion_date: Optional[str] = None
+    target_date: Optional[str] = None
+    on_track: bool
+    deadline_risk: str
+    progress_percent: str
+    priority: int
+    warnings: List[WhatIfWarning]
+
+
+class GoalPlannerRequest(BaseModel):
+    mode: Literal[
+        "single_goal_feasibility",
+        "hypothetical_goal",
+        "multi_goal_prioritization",
+        "deadline_rescue",
+        "family_goal_plan",
+    ]
+    months: int = Field(12, ge=1, le=120)
+    include_narrative: bool = False
+    goal_id: Optional[int] = None
+    target_amount: Optional[Decimal] = Field(None, gt=0)
+    current_amount: Optional[Decimal] = Field(None, ge=0)
+    target_date: Optional[str] = None
+    monthly_contribution: Optional[Decimal] = Field(None, gt=0)
+    goal_name: Optional[str] = None
+    goal_ids: Optional[List[int]] = None
+    strategy: Literal["equal_split", "priority_first", "closest_deadline", "lowest_gap_first"] = "equal_split"
+    available_monthly_savings: Optional[Decimal] = Field(None, gt=0)
+    family_id: Optional[int] = None
+    monthly_family_contribution: Optional[Decimal] = Field(None, gt=0)
+
+
+class HypotheticalGoalResult(BaseModel):
+    mode: str
+    currency: str
+    goal_name: str
+    target_amount: Decimal
+    current_amount: Decimal
+    remaining_amount: Decimal
+    target_date: Optional[str] = None
+    monthly_contribution: Optional[Decimal] = None
+    required_monthly_contribution: Optional[Decimal] = None
+    months_to_completion: Optional[int] = None
+    projected_completion_date: Optional[str] = None
+    on_track: bool
+    deadline_risk: str
+    feasibility: str
+    assumptions: List[WhatIfAssumption]
+    warnings: List[WhatIfWarning]
+    confidence: str
+    narrative: str
+
+
+class SingleGoalFeasibilityResult(BaseModel):
+    mode: str
+    currency: str
+    goal: GoalPlanItem
+    assumptions: List[WhatIfAssumption]
+    warnings: List[WhatIfWarning]
+    confidence: str
+    narrative: str
+
+
+class MultiGoalPrioritizationResult(BaseModel):
+    mode: str
+    currency: str
+    strategy: str
+    available_monthly_savings: Decimal
+    total_allocated: Decimal
+    unallocated: Decimal
+    goal_count: int
+    goals: List[GoalPlanItem]
+    goals_at_risk: List[int]
+    total_funding_gap: Decimal
+    assumptions: List[WhatIfAssumption]
+    warnings: List[WhatIfWarning]
+    confidence: str
+    narrative: str
+
+
+class DeadlineRescueOption(BaseModel):
+    option: str
+    description: str
+    new_monthly_contribution: Optional[Decimal] = None
+    suggested_target: Optional[Decimal] = None
+
+
+class DeadlineRescueResult(BaseModel):
+    mode: str
+    currency: str
+    goal_id: int
+    goal_name: str
+    target_date: str
+    target_amount: Decimal
+    current_amount: Decimal
+    remaining_amount: Decimal
+    current_monthly_contribution: Decimal
+    required_monthly_contribution: Decimal
+    shortfall: Decimal
+    months_to_target: int
+    options: List[DeadlineRescueOption]
+    assumptions: List[WhatIfAssumption]
+    warnings: List[WhatIfWarning]
+    confidence: str
+    narrative: str
+
+
+class FamilyGoalPlanResult(BaseModel):
+    mode: str
+    currency: str
+    family_id: Optional[int] = None
+    monthly_family_contribution: Decimal
+    total_allocated: Decimal
+    goal_count: int
+    goals: List[GoalPlanItem]
+    assumptions: List[WhatIfAssumption]
+    warnings: List[WhatIfWarning]
+    confidence: str
+    narrative: str
+
+
+class GoalPlannerResponse(BaseModel):
+    result: Union[
+        SingleGoalFeasibilityResult,
+        HypotheticalGoalResult,
+        MultiGoalPrioritizationResult,
+        DeadlineRescueResult,
+        FamilyGoalPlanResult,
+    ]
+    disclaimer: str
+
+
+class GoalPrioritizeRequest(BaseModel):
+    months: int = Field(12, ge=1, le=120)
+    include_narrative: bool = False
+    goal_ids: Optional[List[int]] = None
+    strategy: Literal["equal_split", "priority_first", "closest_deadline", "lowest_gap_first"] = "equal_split"
+    available_monthly_savings: Decimal = Field(..., gt=0)
+
+
+class GoalPrioritizeResponse(BaseModel):
+    result: MultiGoalPrioritizationResult
+    disclaimer: str

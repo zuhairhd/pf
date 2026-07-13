@@ -236,6 +236,55 @@ def savings_optimizer_structured_prompt(result: dict[str, Any]) -> list[dict[str
     ]
 
 
+def goal_planner_structured_prompt(result: dict[str, Any]) -> list[dict[str, str]]:
+    """Build a prompt for a structured goal planning result.
+
+    Only aggregated goal metadata is sent — no raw transaction lists or
+    personally identifiable details.
+    """
+    user_content = (
+        "Explain the following goal plan in 3-5 concise sentences. "
+        "Be supportive and educational. Do not make definitive predictions, "
+        "do not recommend specific investment products, and mention assumptions.\n\n"
+        f"Mode: {result.get('mode')}\n"
+        f"Currency: {result.get('currency')}\n"
+    )
+    if result.get("goal_name") is not None:
+        user_content += f"Goal name: {result.get('goal_name')}\n"
+    if result.get("target_amount") is not None:
+        user_content += f"Target amount: {result.get('target_amount')}\n"
+    if result.get("current_amount") is not None:
+        user_content += f"Current amount: {result.get('current_amount')}\n"
+    if result.get("remaining_amount") is not None:
+        user_content += f"Remaining amount: {result.get('remaining_amount')}\n"
+    if result.get("required_monthly_contribution") is not None:
+        user_content += f"Required monthly contribution: {result.get('required_monthly_contribution')}\n"
+    if result.get("months_to_completion") is not None:
+        user_content += f"Months to completion: {result.get('months_to_completion')}\n"
+    if result.get("on_track") is not None:
+        user_content += f"On track: {result.get('on_track')}\n"
+    if result.get("deadline_risk") is not None:
+        user_content += f"Deadline risk: {result.get('deadline_risk')}\n"
+    if result.get("feasibility") is not None:
+        user_content += f"Feasibility: {result.get('feasibility')}\n"
+    if result.get("goal_count") is not None:
+        user_content += f"Number of goals: {result.get('goal_count')}\n"
+    if result.get("strategy") is not None:
+        user_content += f"Strategy: {result.get('strategy')}\n"
+    if result.get("available_monthly_savings") is not None:
+        user_content += f"Available monthly savings: {result.get('available_monthly_savings')}\n"
+    if result.get("goals_at_risk") is not None:
+        user_content += f"Goals at risk: {len(result.get('goals_at_risk', []))}\n"
+    user_content += f"Confidence: {result.get('confidence')}\n"
+    warnings = result.get("warnings") or []
+    if warnings:
+        user_content += "Warnings:\n" + "\n".join(f"- {w['message']}" for w in warnings) + "\n"
+    return [
+        _system_prompt(),
+        {"role": "user", "content": user_content},
+    ]
+
+
 __all__ = [
     "DEFAULT_DISCLAIMER",
     "chat_prompt",
@@ -245,4 +294,5 @@ __all__ = [
     "what_if_structured_prompt",
     "debt_optimizer_structured_prompt",
     "savings_optimizer_structured_prompt",
+    "goal_planner_structured_prompt",
 ]

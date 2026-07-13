@@ -5,6 +5,12 @@ from app.ai_cfo.engines.debt_optimizer import (
     DebtOptimizerError,
     DebtStrategyType,
 )
+from app.ai_cfo.engines.goal_planner import (
+    GoalPlanMode,
+    GoalPlanner,
+    GoalPlannerError,
+    GoalPriorityStrategy,
+)
 from app.ai_cfo.engines.savings_optimizer import (
     AllocationStrategy,
     SavingsModeType,
@@ -24,6 +30,10 @@ __all__ = [
     "DebtOptimizer",
     "DebtOptimizerError",
     "DebtStrategyType",
+    "GoalPlanMode",
+    "GoalPlanner",
+    "GoalPlannerError",
+    "GoalPriorityStrategy",
     "SavingsModeType",
     "SavingsOptimizer",
     "SavingsOptimizerError",

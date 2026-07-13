@@ -6,6 +6,12 @@ from sqlalchemy import select
 from typing import Optional
 
 from app.ai_cfo.engines.debt_optimizer import DebtOptimizer, DebtOptimizerError, DebtStrategyType
+from app.ai_cfo.engines.goal_planner import (
+    GoalPlanMode,
+    GoalPlanner,
+    GoalPlannerError,
+    GoalPriorityStrategy,
+)
 from app.ai_cfo.engines.savings_optimizer import (
     AllocationStrategy,
     SavingsModeType,
@@ -22,6 +28,12 @@ from app.schemas.ai import (
     DebtOptimizerCompareResponse,
     DebtOptimizerRequest,
     DebtOptimizerResponse,
+    GoalPlannerModeMeta,
+    GoalPlannerRequest,
+    GoalPlannerResponse,
+    GoalPlannerStrategyMeta,
+    GoalPrioritizeRequest,
+    GoalPrioritizeResponse,
     SavingsOptimizerCompareResponse,
     SavingsOptimizerRequest,
     SavingsOptimizerResponse,
@@ -423,6 +435,111 @@ async def savings_optimizer_compare(
     except SavingsOptimizerError as exc:
         _handle_savings_optimizer_error(exc)
     return SavingsOptimizerCompareResponse(result=result, disclaimer=DEFAULT_DISCLAIMER)
+
+
+# ---------------------------------------------------------------------------
+# Goal Planner (AI-1213)
+# ---------------------------------------------------------------------------
+
+_GOAL_PLANNER_MODE_CATALOG = [
+    GoalPlannerModeMeta(
+        mode=GoalPlanMode.SINGLE_GOAL_FEASIBILITY.value,
+        label="Single goal feasibility",
+        description="Analyze whether one existing goal is on track and what monthly contribution is required.",
+    ),
+    GoalPlannerModeMeta(
+        mode=GoalPlanMode.HYPOTHETICAL_GOAL.value,
+        label="Hypothetical goal",
+        description="Plan a new goal before creating it by estimating required contributions and timeline.",
+    ),
+    GoalPlannerModeMeta(
+        mode=GoalPlanMode.MULTI_GOAL_PRIORITIZATION.value,
+        label="Multi-goal prioritization",
+        description="Allocate monthly savings across multiple goals using a chosen strategy.",
+    ),
+    GoalPlannerModeMeta(
+        mode=GoalPlanMode.DEADLINE_RESCUE.value,
+        label="Deadline rescue plan",
+        description="Get options to bring an at-risk goal back on track before its deadline.",
+    ),
+    GoalPlannerModeMeta(
+        mode=GoalPlanMode.FAMILY_GOAL_PLAN.value,
+        label="Family goal plan",
+        description="Build a shared allocation plan across visible family goals.",
+    ),
+]
+
+_GOAL_PLANNER_STRATEGY_CATALOG = [
+    GoalPlannerStrategyMeta(
+        strategy=GoalPriorityStrategy.EQUAL_SPLIT.value,
+        label="Equal split",
+        description="Divide available savings evenly across all goals.",
+    ),
+    GoalPlannerStrategyMeta(
+        strategy=GoalPriorityStrategy.PRIORITY_FIRST.value,
+        label="Priority first",
+        description="Fund highest-priority goals fully before lower-priority goals.",
+    ),
+    GoalPlannerStrategyMeta(
+        strategy=GoalPriorityStrategy.CLOSEST_DEADLINE.value,
+        label="Closest deadline",
+        description="Fund goals with the nearest target dates first.",
+    ),
+    GoalPlannerStrategyMeta(
+        strategy=GoalPriorityStrategy.LOWEST_GAP_FIRST.value,
+        label="Lowest gap first",
+        description="Fund goals with the smallest remaining amount first.",
+    ),
+]
+
+
+def _handle_goal_planner_error(exc: GoalPlannerError) -> None:
+    raise HTTPException(status_code=exc.status_code, detail=exc.message)
+
+
+@router.get("/goal-planner/modes")
+async def goal_planner_modes(
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Return supported goal planning modes and strategies."""
+    return {
+        "modes": _GOAL_PLANNER_MODE_CATALOG,
+        "strategies": _GOAL_PLANNER_STRATEGY_CATALOG,
+    }
+
+
+@router.post("/goal-planner/plan", response_model=GoalPlannerResponse)
+async def goal_planner_plan(
+    request: GoalPlannerRequest,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Run one goal planning mode."""
+    planner = GoalPlanner(db, user.organization_id, user=user)
+    try:
+        result = await planner.plan(
+            mode=GoalPlanMode(request.mode),
+            request=request.model_dump(),
+        )
+    except GoalPlannerError as exc:
+        _handle_goal_planner_error(exc)
+    return GoalPlannerResponse(result=result, disclaimer=DEFAULT_DISCLAIMER)
+
+
+@router.post("/goal-planner/prioritize", response_model=GoalPrioritizeResponse)
+async def goal_planner_prioritize(
+    request: GoalPrioritizeRequest,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Prioritize multiple goals using a selected strategy."""
+    planner = GoalPlanner(db, user.organization_id, user=user)
+    try:
+        result = await planner.prioritize(request.model_dump())
+    except GoalPlannerError as exc:
+        _handle_goal_planner_error(exc)
+    return GoalPrioritizeResponse(result=result, disclaimer=DEFAULT_DISCLAIMER)
 
 
 @router.get("/reports/daily")

@@ -646,13 +646,40 @@ Card 1 (Database) ✅
 
 ## Exact Recommended Next Card
 
-### Card 26: AI-1213 — Goal Planner
+### Card 27: AI-1219 — Proactive Alerts
 
-**Decision:** With the Savings Optimizer complete, the next logical step is a focused goal-planning engine. It will analyze active goals alongside income and expense trends, recommend priority ordering and contribution adjustments, and estimate feasibility. It can integrate with the What-If Simulator so users can model "what-if I change my goal contributions?" scenarios.
+**Decision:** With the What-If Simulator, Debt Optimizer, Savings Optimizer, and Goal Planner complete, the next logical step is a proactive alert engine that surfaces actionable financial warnings and opportunities. It can leverage the existing `Notification` model and the AI CFO engines to generate alerts for at-risk goals, upcoming bills, subscription renewals, cash-flow anomalies, and savings opportunities.
 
-**What to tell the coding agent for AI-1213:**
+**What to tell the coding agent for AI-1219:**
 
-> "Implement AI-1213: Goal Planner. Add a read-only engine and API endpoint that analyzes visible goals, income/expense trends, and timelines to recommend priorities and contribution adjustments. Keep tenant/RLS safety, respect private goal visibility, and add tests. Do not build full AI recommendation engine yet."
+> "Implement AI-1219: Proactive Alerts. Add a read-only alert generation engine that creates tenant-scoped financial alerts based on goals, bills, subscriptions, cash flow, and savings/debt optimizer outputs. Store alerts through the existing notification system, keep RLS safety, respect family visibility, and add tests. Do not build real-time push infrastructure yet."
+
+---
+
+## Completed Card 26
+
+### Card 26: AI-1213 — Goal Planner ✅ DONE
+
+**PLAN_V2 Reference:** AI-1213 (Goal Planner)  
+**Type:** Feature / AI CFO  
+**Priority:** HIGH
+
+**Completed:**
+- Created `app/ai_cfo/engines/goal_planner.py` with deterministic, read-only goal planning.
+- Supported modes: single_goal_feasibility, hypothetical_goal, multi_goal_prioritization, deadline_rescue, family_goal_plan.
+- Supported prioritization strategies: equal_split, priority_first, closest_deadline, lowest_gap_first.
+- Added structured Pydantic schemas in `app/schemas/ai.py` and a dedicated LLM prompt in `app/ai_cfo/llm/prompts.py`.
+- Added `/ai/goal-planner/modes`, `/ai/goal-planner/plan`, and `/ai/goal-planner/prioritize` endpoints in `app/routers/ai.py`.
+- Validated goal access through `FamilyGoalService`; cross-tenant goals return `404` and unauthorized private goals return `403`.
+- Implemented deterministic fallback narrative and optional LLM narrative with cost-control and safety filtering.
+- Added 23 integration tests; full suite **336 passed, 1 skipped**.
+
+**Remaining:**
+- Dedicated goal-planner UI template/page.
+- Formal probability modeling.
+- Integration with the What-If Simulator.
+
+**Test results:** 336 passed, 1 skipped
 
 ---
 
