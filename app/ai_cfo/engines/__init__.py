@@ -11,6 +11,13 @@ from app.ai_cfo.engines.goal_planner import (
     GoalPlannerError,
     GoalPriorityStrategy,
 )
+from app.ai_cfo.engines.proactive_alerts import (
+    ProactiveAlertCandidate,
+    ProactiveAlertsEngine,
+    ProactiveAlertsError,
+    ProactiveAlertSeverity,
+    ProactiveAlertType,
+)
 from app.ai_cfo.engines.savings_optimizer import (
     AllocationStrategy,
     SavingsModeType,
@@ -34,6 +41,11 @@ __all__ = [
     "GoalPlanner",
     "GoalPlannerError",
     "GoalPriorityStrategy",
+    "ProactiveAlertCandidate",
+    "ProactiveAlertSeverity",
+    "ProactiveAlertsEngine",
+    "ProactiveAlertsError",
+    "ProactiveAlertType",
     "SavingsModeType",
     "SavingsOptimizer",
     "SavingsOptimizerError",

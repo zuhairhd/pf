@@ -1,5 +1,7 @@
-from pydantic_settings import BaseSettings
+from decimal import Decimal
 from functools import lru_cache
+
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -38,6 +40,15 @@ class Settings(BaseSettings):
     NOTIFICATIONS_ENABLED: bool = True
     BILL_REMINDER_DAYS_DEFAULT: int = 3
     SUBSCRIPTION_REMINDER_DAYS_DEFAULT: int = 7
+
+    # AI Proactive Alerts
+    PROACTIVE_ALERTS_ENABLED: bool = True
+    ALERT_BILL_DUE_DAYS: int = 3
+    ALERT_SUBSCRIPTION_RENEWAL_DAYS: int = 7
+    ALERT_SPENDING_ANOMALY_PERCENT: Decimal = Decimal("30")
+    ALERT_LOW_CASHFLOW_THRESHOLD: Decimal = Decimal("0")
+    ALERT_EMERGENCY_FUND_MONTHS: Decimal = Decimal("1")
+    ALERT_DEBT_TO_INCOME_THRESHOLD: Decimal = Decimal("0.36")
 
     # AI / OpenAI
     OPENAI_API_KEY: str = ""

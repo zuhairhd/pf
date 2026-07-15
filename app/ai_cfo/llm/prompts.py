@@ -285,6 +285,27 @@ def goal_planner_structured_prompt(result: dict[str, Any]) -> list[dict[str, str
     ]
 
 
+def proactive_alert_structured_prompt(candidate: dict[str, Any]) -> list[dict[str, str]]:
+    """Build a prompt for rewording a proactive alert.
+
+    Only aggregated alert metadata is sent — no raw transaction lists or
+    personally identifiable details.
+    """
+    user_content = (
+        "Rephrase the following financial alert in 1-2 concise, supportive sentences. "
+        "Be educational, not alarming. Do not make definitive predictions, "
+        "do not recommend specific financial products, and mention assumptions.\n\n"
+        f"Alert type: {candidate.get('alert_type')}\n"
+        f"Severity: {candidate.get('severity')}\n"
+        f"Title: {candidate.get('title')}\n"
+        f"Message: {candidate.get('message')}\n"
+    )
+    return [
+        _system_prompt(),
+        {"role": "user", "content": user_content},
+    ]
+
+
 __all__ = [
     "DEFAULT_DISCLAIMER",
     "chat_prompt",
@@ -295,4 +316,5 @@ __all__ = [
     "debt_optimizer_structured_prompt",
     "savings_optimizer_structured_prompt",
     "goal_planner_structured_prompt",
+    "proactive_alert_structured_prompt",
 ]

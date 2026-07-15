@@ -90,7 +90,7 @@
 | ACC-503A | Journal Entry Reversal Support | **Done** (`AccountingService.reverse_journal_entry`, reversal metadata, bill/subscription reversal integration, tests) |
 | BDG-1000 to BDG-1003 | Budgets | Partial (models, routes, service exist) |
 | DB-1100 to DB-1105 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI and DB-1105A family goals widget UI; Partial for remaining dashboard widgets |
-| AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client, AI-1214 What-If Simulator, AI-1211 Debt Optimizer, AI-1212 Savings Optimizer, and AI-1213 Goal Planner; Partial for remaining AI engines |
+| AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client, AI-1214 What-If Simulator, AI-1211 Debt Optimizer, AI-1212 Savings Optimizer, AI-1213 Goal Planner, and AI-1219 Proactive Alerts; Partial for remaining AI engines |
 | FAM-1300 | Family Finance Foundation | **Done** |
 | FAM-1301 | Family Account Visibility and Shared/Private Data Rules | **Done** |
 | FAM-1302 | Family Goals | **Done** |
@@ -248,9 +248,39 @@
 
 ---
 
+## Completed Card 27
+
+### Card 27: AI-1219 — Proactive Alerts ✅ DONE
+
+**PLAN_V2 Reference:** AI-1219 (Proactive Alerts Engine)  
+**Type:** Feature / AI CFO  
+**Priority:** HIGH
+
+**Completed:**
+- Created `app/ai_cfo/engines/proactive_alerts.py` with deterministic, read-only alert detection.
+- Implemented alert types: bill due soon, bill overdue, subscription renewal soon, high spending anomaly, negative cash flow, low emergency fund, goal deadline risk, and debt pressure.
+- Added structured Pydantic schemas in `app/schemas/ai.py` and a dedicated LLM prompt in `app/ai_cfo/llm/prompts.py`.
+- Added `/ai/proactive-alerts/types`, `/ai/proactive-alerts/preview`, and `/ai/proactive-alerts/run` endpoints in `app/routers/ai.py`.
+- Wired `run()` to create in-app notifications through `NotificationDeliveryService` with duplicate prevention per entity/type/day.
+- Added `run_proactive_alerts_task` Celery stub in `app/tasks/notifications.py`.
+- Implemented deterministic fallback wording and optional LLM wording with cost-control and safety filtering.
+- Fixed `Decimal` import in `app/config.py` so proactive-alert defaults load correctly.
+- Added 18 integration tests covering all alert types, deduplication, auth, read-only safety, LLM fallback, tenant isolation, and RLS.
+- Full test suite: **354 passed, 1 skipped**.
+
+**Remaining:**
+- Real-time push/email delivery for generated alerts.
+- Production Celery scheduling for daily alert runs.
+- Statistical anomaly modeling for spending alerts.
+- Deeper family-role scoping for private-goal alerts.
+
+**Test results:** 354 passed, 1 skipped
+
+---
+
 ## Latest Completed Card
 
-**AI-1213 - Goal Planner** is complete. Authenticated tenant members can now run read-only goal feasibility, prioritization, and deadline-rescue analyses with optional LLM-generated narratives and educational disclaimers. Tenant isolation, private goal visibility, and RLS remain enforced and the full test suite passes.
+**AI-1219 - Proactive Alerts** is complete. Authenticated tenant admins/owners can run a daily alert generator that creates tenant-scoped, deduplicated in-app notifications for bills, subscriptions, cash-flow risks, emergency-fund shortfalls, goal deadline risks, spending anomalies, and debt pressure. Tenant isolation and RLS remain enforced and the full test suite passes.
 
 ---
 

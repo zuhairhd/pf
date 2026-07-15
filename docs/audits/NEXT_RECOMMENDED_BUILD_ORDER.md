@@ -10,9 +10,9 @@
 
 ## Executive Summary
 
-Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), and AI-1212 (Savings Optimizer) are **COMPLETE**. The database has 43 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and users can run read-only debt, savings, and financial simulations through the AI CFO.
+Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), and AI-1219 (Proactive Alerts) are **COMPLETE**. The database has 43 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and users can run read-only debt, savings, goal, and proactive-alert analyses through the AI CFO.
 
-The next card should be **AI-1213 — Goal Planner**, the next focused AI CFO engine.
+The next card should be **AI-1220 — AI Chat Interface**, the next focused AI CFO engine in `PLAN_V2.md`.
 
 ---
 
@@ -644,15 +644,44 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 27
+
+### Card 27: AI-1219 — Proactive Alerts ✅ DONE
+
+**PLAN_V2 Reference:** AI-1219 (Proactive Alerts Engine)  
+**Type:** Feature / AI CFO  
+**Priority:** HIGH
+
+**Completed:**
+- Created `app/ai_cfo/engines/proactive_alerts.py` with deterministic, read-only alert detection.
+- Implemented alert types: bill due soon, bill overdue, subscription renewal soon, high spending anomaly, negative cash flow, low emergency fund, goal deadline risk, and debt pressure.
+- Added structured Pydantic schemas in `app/schemas/ai.py` and a dedicated LLM prompt in `app/ai_cfo/llm/prompts.py`.
+- Added `/ai/proactive-alerts/types`, `/ai/proactive-alerts/preview`, and `/ai/proactive-alerts/run` endpoints in `app/routers/ai.py`.
+- Wired `run()` to create in-app notifications through `NotificationDeliveryService` with duplicate prevention per entity/type/day.
+- Added `run_proactive_alerts_task` Celery stub in `app/tasks/notifications.py`.
+- Implemented deterministic fallback wording and optional LLM wording with cost-control and safety filtering.
+- Fixed `Decimal` import in `app/config.py` so proactive-alert defaults load correctly.
+- Added 18 integration tests covering all alert types, deduplication, auth, read-only safety, LLM fallback, tenant isolation, and RLS.
+- Full test suite: **354 passed, 1 skipped**.
+
+**Remaining:**
+- Real-time push/email delivery for generated alerts.
+- Production Celery scheduling for daily alert runs.
+- Statistical anomaly modeling for spending alerts.
+
+**Test results:** 354 passed, 1 skipped
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 27: AI-1219 — Proactive Alerts
+### Card 28: AI-1220 — AI Chat Interface
 
-**Decision:** With the What-If Simulator, Debt Optimizer, Savings Optimizer, and Goal Planner complete, the next logical step is a proactive alert engine that surfaces actionable financial warnings and opportunities. It can leverage the existing `Notification` model and the AI CFO engines to generate alerts for at-risk goals, upcoming bills, subscription renewals, cash-flow anomalies, and savings opportunities.
+**Decision:** With the What-If Simulator, Debt Optimizer, Savings Optimizer, Goal Planner, and Proactive Alerts complete, the next logical step is the AI Chat Interface. It provides conversational access to the AI CFO, leverages the existing LLM client and safety layer, and can surface insights from the engines already built.
 
-**What to tell the coding agent for AI-1219:**
+**What to tell the coding agent for AI-1220:**
 
-> "Implement AI-1219: Proactive Alerts. Add a read-only alert generation engine that creates tenant-scoped financial alerts based on goals, bills, subscriptions, cash flow, and savings/debt optimizer outputs. Store alerts through the existing notification system, keep RLS safety, respect family visibility, and add tests. Do not build real-time push infrastructure yet."
+> "Implement AI-1220: AI Chat Interface. Build tenant-scoped chat endpoints and UI that store conversation history, send user messages to the AI orchestrator, display formatted responses, and support suggested questions. Keep RLS safety, use existing LLM client/fallback, and add tests. Do not build WebSocket real-time infrastructure unless already planned."
 
 ---
 

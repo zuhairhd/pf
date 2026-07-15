@@ -12,6 +12,12 @@ from app.ai_cfo.engines.goal_planner import (
     GoalPlannerError,
     GoalPriorityStrategy,
 )
+from app.ai_cfo.engines.proactive_alerts import (
+    ProactiveAlertSeverity,
+    ProactiveAlertsEngine,
+    ProactiveAlertsError,
+    ProactiveAlertType,
+)
 from app.ai_cfo.engines.savings_optimizer import (
     AllocationStrategy,
     SavingsModeType,
@@ -20,7 +26,11 @@ from app.ai_cfo.engines.savings_optimizer import (
 )
 from app.ai_cfo.engines.whatif_simulator import WhatIfError, WhatIfScenarioType, WhatIfSimulator
 from app.ai_cfo.llm.prompts import DEFAULT_DISCLAIMER
-from app.core.security import get_db_with_tenant_context, require_tenant_member
+from app.core.security import (
+    get_db_with_tenant_context,
+    require_tenant_admin,
+    require_tenant_member,
+)
 from app.models import AIInsight, AIReport, AIChatSession, AIChatMessage, User
 from app.schemas.ai import (
     ChatRequest,
@@ -34,6 +44,10 @@ from app.schemas.ai import (
     GoalPlannerStrategyMeta,
     GoalPrioritizeRequest,
     GoalPrioritizeResponse,
+    ProactiveAlertPreviewResponse,
+    ProactiveAlertRunRequest,
+    ProactiveAlertRunResponse,
+    ProactiveAlertTypeMeta,
     SavingsOptimizerCompareResponse,
     SavingsOptimizerRequest,
     SavingsOptimizerResponse,
@@ -540,6 +554,127 @@ async def goal_planner_prioritize(
     except GoalPlannerError as exc:
         _handle_goal_planner_error(exc)
     return GoalPrioritizeResponse(result=result, disclaimer=DEFAULT_DISCLAIMER)
+
+
+# ---------------------------------------------------------------------------
+# Proactive Alerts (AI-1219)
+# ---------------------------------------------------------------------------
+
+_PROACTIVE_ALERT_CATALOG = [
+    ProactiveAlertTypeMeta(
+        alert_type=ProactiveAlertType.BILL_DUE_SOON.value,
+        label="Bill due soon",
+        description="Unpaid bills due within the configured number of days.",
+        default_severity=ProactiveAlertSeverity.WARNING.value,
+    ),
+    ProactiveAlertTypeMeta(
+        alert_type=ProactiveAlertType.BILL_OVERDUE.value,
+        label="Bill overdue",
+        description="Unpaid bills that have passed their due date.",
+        default_severity=ProactiveAlertSeverity.CRITICAL.value,
+    ),
+    ProactiveAlertTypeMeta(
+        alert_type=ProactiveAlertType.SUBSCRIPTION_RENEWAL_SOON.value,
+        label="Subscription renewal soon",
+        description="Active subscriptions renewing within the configured number of days.",
+        default_severity=ProactiveAlertSeverity.INFO.value,
+    ),
+    ProactiveAlertTypeMeta(
+        alert_type=ProactiveAlertType.HIGH_SPENDING_ANOMALY.value,
+        label="High spending anomaly",
+        description="Recent spending significantly above the recent baseline.",
+        default_severity=ProactiveAlertSeverity.WARNING.value,
+    ),
+    ProactiveAlertTypeMeta(
+        alert_type=ProactiveAlertType.NEGATIVE_CASH_FLOW.value,
+        label="Cash-flow risk",
+        description="Average monthly expenses are near or exceeding income.",
+        default_severity=ProactiveAlertSeverity.WARNING.value,
+    ),
+    ProactiveAlertTypeMeta(
+        alert_type=ProactiveAlertType.LOW_EMERGENCY_FUND.value,
+        label="Emergency fund risk",
+        description="Liquid assets cover fewer months of expenses than the configured target.",
+        default_severity=ProactiveAlertSeverity.WARNING.value,
+    ),
+    ProactiveAlertTypeMeta(
+        alert_type=ProactiveAlertType.GOAL_DEADLINE_RISK.value,
+        label="Goal deadline risk",
+        description="A goal may miss its target date at the current contribution rate.",
+        default_severity=ProactiveAlertSeverity.WARNING.value,
+    ),
+    ProactiveAlertTypeMeta(
+        alert_type=ProactiveAlertType.DEBT_PRESSURE.value,
+        label="Debt pressure warning",
+        description="Debt obligations are high relative to income, or a minimum payment does not cover interest.",
+        default_severity=ProactiveAlertSeverity.WARNING.value,
+    ),
+]
+
+
+def _handle_proactive_alerts_error(exc: ProactiveAlertsError) -> None:
+    raise HTTPException(status_code=exc.status_code, detail=exc.message)
+
+
+@router.get("/proactive-alerts/types")
+async def proactive_alerts_types(
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Return supported proactive alert types and thresholds."""
+    return {
+        "alert_types": _PROACTIVE_ALERT_CATALOG,
+        "thresholds": {
+            "bill_due_days": settings.ALERT_BILL_DUE_DAYS,
+            "subscription_renewal_days": settings.ALERT_SUBSCRIPTION_RENEWAL_DAYS,
+            "spending_anomaly_percent": settings.ALERT_SPENDING_ANOMALY_PERCENT,
+            "low_cashflow_threshold": settings.ALERT_LOW_CASHFLOW_THRESHOLD,
+            "emergency_fund_months": settings.ALERT_EMERGENCY_FUND_MONTHS,
+            "debt_to_income_threshold": settings.ALERT_DEBT_TO_INCOME_THRESHOLD,
+        },
+    }
+
+
+@router.post("/proactive-alerts/preview", response_model=ProactiveAlertPreviewResponse)
+async def proactive_alerts_preview(
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Return detected alert candidates without creating notifications."""
+    engine = ProactiveAlertsEngine(db, user.organization_id, user=user)
+    try:
+        candidates = await engine.preview()
+    except ProactiveAlertsError as exc:
+        _handle_proactive_alerts_error(exc)
+
+    return ProactiveAlertPreviewResponse(
+        candidates=[
+            {
+                "alert_type": c.alert_type.value,
+                "severity": c.severity.value,
+                "title": c.title,
+                "message": c.message,
+                "related_entity_type": c.related_entity_type,
+                "related_entity_id": c.related_entity_id,
+            }
+            for c in candidates
+        ]
+    )
+
+
+@router.post("/proactive-alerts/run", response_model=ProactiveAlertRunResponse)
+async def proactive_alerts_run(
+    request: ProactiveAlertRunRequest,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_admin),
+):
+    """Detect alerts and create in-app notifications, deduplicated by day."""
+    engine = ProactiveAlertsEngine(db, user.organization_id, user=user)
+    try:
+        result = await engine.run(include_llm_wording=request.include_llm_wording)
+    except ProactiveAlertsError as exc:
+        _handle_proactive_alerts_error(exc)
+    return ProactiveAlertRunResponse(**result)
 
 
 @router.get("/reports/daily")

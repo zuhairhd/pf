@@ -569,3 +569,38 @@ class GoalPrioritizeRequest(BaseModel):
 class GoalPrioritizeResponse(BaseModel):
     result: MultiGoalPrioritizationResult
     disclaimer: str
+
+
+# ---------------------------------------------------------------------------
+# Proactive Alerts schemas (AI-1219)
+# ---------------------------------------------------------------------------
+
+
+class ProactiveAlertTypeMeta(BaseModel):
+    alert_type: str
+    label: str
+    description: str
+    default_severity: str
+
+
+class ProactiveAlertCandidateSchema(BaseModel):
+    alert_type: str
+    severity: str
+    title: str
+    message: str
+    related_entity_type: Optional[str] = None
+    related_entity_id: Optional[int] = None
+
+
+class ProactiveAlertRunRequest(BaseModel):
+    include_llm_wording: bool = False
+
+
+class ProactiveAlertRunResponse(BaseModel):
+    created: int
+    skipped: int
+    candidates: int
+
+
+class ProactiveAlertPreviewResponse(BaseModel):
+    candidates: List[ProactiveAlertCandidateSchema]
