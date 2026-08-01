@@ -90,7 +90,7 @@
 | ACC-503A | Journal Entry Reversal Support | **Done** (`AccountingService.reverse_journal_entry`, reversal metadata, bill/subscription reversal integration, tests) |
 | BDG-1000 to BDG-1003 | Budgets | Partial (models, routes, service exist) |
 | DB-1100 to DB-1105 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI and DB-1105A family goals widget UI; Partial for remaining dashboard widgets |
-| AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client, AI-1214 What-If Simulator, AI-1211 Debt Optimizer, AI-1212 Savings Optimizer, AI-1213 Goal Planner, and AI-1219 Proactive Alerts; Partial for remaining AI engines |
+| AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client, AI-1214 What-If Simulator, AI-1211 Debt Optimizer, AI-1212 Savings Optimizer, AI-1213 Goal Planner, AI-1219 Proactive Alerts, and AI-1220 AI Chat Interface; Partial for remaining AI engines |
 | FAM-1300 | Family Finance Foundation | **Done** |
 | FAM-1301 | Family Account Visibility and Shared/Private Data Rules | **Done** |
 | FAM-1302 | Family Goals | **Done** |
@@ -278,9 +278,50 @@
 
 ---
 
+## Completed Card 28
+
+### Card 28: AI-1220 — AI Chat Interface ✅ DONE
+
+**PLAN_V2 Reference:** AI-1220 (AI Chat Interface)  
+**Type:** Feature / AI CFO  
+**Priority:** HIGH
+
+**Completed:**
+- Rewrote `app/services/ai_chat.py` with session-aware `AIChatService`:
+  - `list_sessions`, `get_session`, `get_chat_history`, `delete_session`
+  - `_get_or_create_session` auto-creates sessions and titles
+  - `_build_history` loads recent messages for LLM context
+  - `_generate_response` uses existing `LLMClient` with cost-control and safety fallback
+  - `_rule_based_response` and `_suggested_questions` provide deterministic fallback
+- Updated `app/ai_cfo/llm/prompts.py` `chat_prompt()` to accept conversation `history`.
+- Added structured Pydantic schemas in `app/schemas/ai.py`:
+  - `ChatMessageResponse`, `ChatSessionResponse`, `ChatSessionsResponse`
+  - `ChatHistoryResponse`, `ChatSuggestedQuestionsResponse`
+  - `session_id` field on `ChatResponse`
+- Added tenant-scoped chat session routes in `app/routers/ai.py`:
+  - `GET /ai/chat/sessions`
+  - `GET /ai/chat/sessions/{session_id}`
+  - `GET /ai/chat/sessions/{session_id}/messages`
+  - `GET /ai/chat/sessions/{session_id}/suggested-questions`
+  - `DELETE /ai/chat/sessions/{session_id}`
+- The existing `POST /ai/chat` endpoint now returns `session_id` and maintains context across turns.
+- All routes enforce authentication and tenant membership; service queries filter by `tenant_id` and `user_id`.
+- No migration required; existing `AIChatSession` and `AIChatMessage` models already support tenant/user/message storage.
+- Added 10 integration tests in `app/tests/integration/test_ai_chat.py` covering auth, session creation, history, deletion, suggested questions, cross-tenant isolation, and LLM fallback.
+- Full test suite: **364 passed, 1 skipped**.
+
+**Remaining:**
+- Update the HTML chat page (`/ai/chat`) to use the new session API inline.
+- Implement cross-session AI memory (AI-1221).
+- Add WebSocket real-time chat only if product requirements justify it.
+
+**Test results:** 364 passed, 1 skipped
+
+---
+
 ## Latest Completed Card
 
-**AI-1219 - Proactive Alerts** is complete. Authenticated tenant admins/owners can run a daily alert generator that creates tenant-scoped, deduplicated in-app notifications for bills, subscriptions, cash-flow risks, emergency-fund shortfalls, goal deadline risks, spending anomalies, and debt pressure. Tenant isolation and RLS remain enforced and the full test suite passes.
+**AI-1220 - AI Chat Interface** is complete. Authenticated tenant members can create chat sessions, send messages that maintain conversation context, list and delete their sessions, retrieve message history, and receive context-aware suggested questions. Tenant isolation and RLS remain enforced and the full test suite passes.
 
 ---
 

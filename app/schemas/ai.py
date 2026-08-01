@@ -19,6 +19,39 @@ class ChatResponse(BaseModel):
     disclaimer: Optional[str] = None
     tokens_used: Optional[int] = None
     estimated_cost: Optional[float] = None
+    session_id: Optional[int] = None
+
+
+class ChatMessageResponse(BaseModel):
+    id: int
+    role: str
+    content: str
+    tokens_used: Optional[int] = None
+    estimated_cost: Optional[float] = None
+    model: Optional[str] = None
+    created_at: str
+
+
+class ChatSessionResponse(BaseModel):
+    id: int
+    title: Optional[str] = None
+    created_at: str
+    updated_at: str
+    message_count: int
+
+
+class ChatSessionsResponse(BaseModel):
+    sessions: List[ChatSessionResponse]
+
+
+class ChatHistoryResponse(BaseModel):
+    session_id: int
+    title: Optional[str] = None
+    messages: List[ChatMessageResponse]
+
+
+class ChatSuggestedQuestionsResponse(BaseModel):
+    questions: List[str]
 
 
 class WhatIfRequest(BaseModel):

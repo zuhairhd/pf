@@ -34,8 +34,16 @@ def _system_prompt() -> dict[str, str]:
     }
 
 
-def chat_prompt(user_message: str, context: dict[str, Any] | None = None) -> list[dict[str, str]]:
-    """Build a chat completion prompt for the AI Financial Coach."""
+def chat_prompt(
+    user_message: str,
+    context: dict[str, Any] | None = None,
+    history: list[dict[str, str]] | None = None,
+) -> list[dict[str, str]]:
+    """Build a chat completion prompt for the AI Financial Coach.
+
+    Includes optional conversation history so the assistant can maintain
+    context across multiple turns.
+    """
     messages = [_system_prompt()]
 
     if context:
@@ -51,6 +59,9 @@ def chat_prompt(user_message: str, context: dict[str, Any] | None = None) -> lis
                 "role": "system",
                 "content": "User context:\n" + "\n".join(context_parts),
             })
+
+    if history:
+        messages.extend(history)
 
     messages.append({"role": "user", "content": user_message})
     return messages

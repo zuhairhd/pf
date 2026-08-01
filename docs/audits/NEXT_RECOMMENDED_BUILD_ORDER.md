@@ -10,9 +10,9 @@
 
 ## Executive Summary
 
-Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), and AI-1219 (Proactive Alerts) are **COMPLETE**. The database has 43 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and users can run read-only debt, savings, goal, and proactive-alert analyses through the AI CFO.
+Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), and AI-1220 (AI Chat Interface) are **COMPLETE**. The database has 43 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and users can run read-only debt, savings, goal, proactive-alert, and conversational analyses through the AI CFO.
 
-The next card should be **AI-1220 — AI Chat Interface**, the next focused AI CFO engine in `PLAN_V2.md`.
+The next card should be **AI-1221 — AI Memory System**, the next focused AI CFO engine in `PLAN_V2.md`.
 
 ---
 
@@ -673,15 +673,46 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 28
+
+### Card 28: AI-1220 — AI Chat Interface ✅ DONE
+
+**PLAN_V2 Reference:** AI-1220 (AI Chat Interface)  
+**Type:** Feature / AI CFO  
+**Priority:** HIGH
+
+**Completed:**
+- Rewrote `app/services/ai_chat.py` with `AIChatService` supporting session creation, history retrieval, deletion, and context-aware responses.
+- Updated `chat_prompt()` in `app/ai_cfo/llm/prompts.py` to include prior conversation history.
+- Added chat schemas to `app/schemas/ai.py`: `ChatMessageResponse`, `ChatSessionResponse`, `ChatSessionsResponse`, `ChatHistoryResponse`, `ChatSuggestedQuestionsResponse`, plus `session_id` on `ChatResponse`.
+- Added tenant-scoped chat session routes in `app/routers/ai.py`:
+  - `GET /ai/chat/sessions`
+  - `GET /ai/chat/sessions/{session_id}`
+  - `GET /ai/chat/sessions/{session_id}/messages`
+  - `GET /ai/chat/sessions/{session_id}/suggested-questions`
+  - `DELETE /ai/chat/sessions/{session_id}`
+- Existing `POST /ai/chat` now returns `session_id` and reuses sessions across turns.
+- Deterministic rule-based fallback and suggested questions work when the LLM is unavailable.
+- No migration required; existing `AIChatSession`/`AIChatMessage` models were sufficient.
+- Added 10 integration tests; full suite **364 passed, 1 skipped**.
+
+**Remaining:**
+- Update HTML chat UI to use the new session endpoints.
+- Implement cross-session AI memory (AI-1221).
+
+**Test results:** 364 passed, 1 skipped
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 28: AI-1220 — AI Chat Interface
+### Card 29: AI-1221 — AI Memory System
 
-**Decision:** With the What-If Simulator, Debt Optimizer, Savings Optimizer, Goal Planner, and Proactive Alerts complete, the next logical step is the AI Chat Interface. It provides conversational access to the AI CFO, leverages the existing LLM client and safety layer, and can surface insights from the engines already built.
+**Decision:** With the AI Chat Interface complete, the next logical step is the AI Memory System. It maintains context across separate chat sessions, stores short-term and long-term memory, and enables the AI Financial Coach to remember user preferences, recurring topics, and key financial facts without exposing raw transaction data.
 
-**What to tell the coding agent for AI-1220:**
+**What to tell the coding agent for AI-1221:**
 
-> "Implement AI-1220: AI Chat Interface. Build tenant-scoped chat endpoints and UI that store conversation history, send user messages to the AI orchestrator, display formatted responses, and support suggested questions. Keep RLS safety, use existing LLM client/fallback, and add tests. Do not build WebSocket real-time infrastructure unless already planned."
+> "Implement AI-1221: AI Memory System. Build tenant-scoped, privacy-safe memory storage for the AI CFO. Support short-term memory (last 10 messages of current session), long-term memory across sessions (user preferences, recurring topics, key financial facts), and a memory retrieval/summarization layer. Keep RLS safety, do not store raw transaction details, use existing LLM client/fallback, and add tests. Do not build WebSocket real-time infrastructure unless already planned."
 
 ---
 

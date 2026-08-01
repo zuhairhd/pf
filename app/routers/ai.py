@@ -33,8 +33,13 @@ from app.core.security import (
 )
 from app.models import AIInsight, AIReport, AIChatSession, AIChatMessage, User
 from app.schemas.ai import (
+    ChatHistoryResponse,
+    ChatMessageResponse,
     ChatRequest,
     ChatResponse,
+    ChatSessionsResponse,
+    ChatSessionResponse,
+    ChatSuggestedQuestionsResponse,
     DebtOptimizerCompareResponse,
     DebtOptimizerRequest,
     DebtOptimizerResponse,
@@ -194,6 +199,99 @@ async def chat_with_ai(
     response = await chat_service.chat(chat_request.message, chat_request.session_id)
 
     return response
+
+
+def _format_chat_message(msg: AIChatMessage) -> dict:
+    return {
+        "id": msg.id,
+        "role": msg.role,
+        "content": msg.content,
+        "tokens_used": msg.tokens_used,
+        "estimated_cost": float(msg.cost) if msg.cost is not None else None,
+        "model": msg.model,
+        "created_at": msg.created_at.isoformat() if msg.created_at else None,
+    }
+
+
+def _format_chat_session(session: AIChatSession) -> dict:
+    return {
+        "id": session.id,
+        "title": session.title,
+        "created_at": session.created_at.isoformat() if session.created_at else None,
+        "updated_at": session.updated_at.isoformat() if session.updated_at else None,
+        "message_count": len(session.messages) if session.messages else 0,
+    }
+
+
+@router.get("/chat/sessions", response_model=ChatSessionsResponse)
+async def list_chat_sessions(
+    limit: int = 20,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """List chat sessions for the current user/tenant."""
+    service = AIChatService(db, user.organization_id, user.id)
+    sessions = await service.list_sessions(limit=limit, offset=offset)
+    return ChatSessionsResponse(sessions=[_format_chat_session(s) for s in sessions])
+
+
+@router.get("/chat/sessions/{session_id}", response_model=ChatHistoryResponse)
+async def get_chat_session(
+    session_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Get a chat session with its full message history."""
+    service = AIChatService(db, user.organization_id, user.id)
+    session = await service.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+    messages = await service.get_chat_history(session_id)
+    return ChatHistoryResponse(
+        session_id=session.id,
+        title=session.title,
+        messages=[_format_chat_message(m) for m in messages],
+    )
+
+
+@router.get("/chat/sessions/{session_id}/messages", response_model=ChatHistoryResponse)
+async def get_chat_messages(
+    session_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Get messages for a chat session."""
+    return await get_chat_session(session_id, db, user)
+
+
+@router.get(
+    "/chat/sessions/{session_id}/suggested-questions",
+    response_model=ChatSuggestedQuestionsResponse,
+)
+async def get_chat_suggested_questions(
+    session_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Return suggested follow-up questions for a chat session."""
+    service = AIChatService(db, user.organization_id, user.id)
+    questions = await service.get_suggested_questions(session_id)
+    return ChatSuggestedQuestionsResponse(questions=questions)
+
+
+@router.delete("/chat/sessions/{session_id}", status_code=204)
+async def delete_chat_session(
+    session_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Delete a chat session and its messages."""
+    service = AIChatService(db, user.organization_id, user.id)
+    deleted = await service.delete_session(session_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+    return None
 
 
 @router.get("/insights", response_class=HTMLResponse)
