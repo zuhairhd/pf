@@ -18,6 +18,7 @@ from typing import Any, Optional
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai_cfo.confidence import ConfidenceScore, ConfidenceScorer
 from app.ai_cfo.llm.client import LLMClient, LLMError
 from app.ai_cfo.llm.cost_control import CostController
 from app.ai_cfo.llm.prompts import savings_optimizer_structured_prompt
@@ -325,6 +326,7 @@ class SavingsOptimizer:
             "confidence": self._confidence(snapshot),
             "narrative": "",
         }
+        result.update(self._confidence_score(snapshot).to_dict())
         result["narrative"] = await self._narrative(result, request)
         return result
 
@@ -412,6 +414,7 @@ class SavingsOptimizer:
             "confidence": self._confidence(snapshot),
             "narrative": "",
         }
+        result.update(self._confidence_score(snapshot).to_dict())
         result["narrative"] = await self._narrative(result, request)
         return result
 
@@ -487,6 +490,7 @@ class SavingsOptimizer:
             "confidence": self._confidence(snapshot),
             "narrative": "",
         }
+        result.update(self._confidence_score(snapshot).to_dict())
         result["narrative"] = await self._narrative(result, request)
         return result
 
@@ -585,6 +589,7 @@ class SavingsOptimizer:
             "confidence": self._confidence(snapshot),
             "narrative": "",
         }
+        result.update(self._confidence_score(snapshot).to_dict())
         result["narrative"] = await self._narrative(result, request)
         return result
 
@@ -679,6 +684,7 @@ class SavingsOptimizer:
             "confidence": self._confidence(snapshot),
             "narrative": "",
         }
+        result.update(self._confidence_score(snapshot).to_dict())
         result["narrative"] = await self._narrative(result, request)
         return result
 
@@ -710,12 +716,26 @@ class SavingsOptimizer:
     # ------------------------------------------------------------------
     # Confidence
     # ------------------------------------------------------------------
+    def _confidence_score(
+        self,
+        snapshot: CashFlowSnapshot,
+        extra_factors: Optional[list[str]] = None,
+    ) -> ConfidenceScore:
+        scorer = ConfidenceScorer().add("deterministic_calculation")
+        no_income = snapshot.avg_monthly_income == 0
+        no_expenses = snapshot.avg_monthly_expenses == 0
+        if no_income and no_expenses:
+            scorer.add("low_transaction_history").add("many_assumptions")
+        elif no_income or no_expenses:
+            scorer.add("low_transaction_history")
+        else:
+            scorer.add("sufficient_history").add("direct_accounting_data")
+        for name in extra_factors or []:
+            scorer.add(name)
+        return scorer.build()
+
     def _confidence(self, snapshot: CashFlowSnapshot) -> str:
-        if snapshot.avg_monthly_income == 0 and snapshot.avg_monthly_expenses == 0:
-            return Confidence.LOW.value
-        if snapshot.avg_monthly_income == 0 or snapshot.avg_monthly_expenses == 0:
-            return Confidence.MEDIUM.value
-        return Confidence.HIGH.value
+        return self._confidence_score(snapshot).label.value
 
     # ------------------------------------------------------------------
     # Narrative

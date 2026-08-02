@@ -16,6 +16,7 @@ from typing import Any, Optional
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai_cfo.confidence import ConfidenceScorer
 from app.ai_cfo.llm.client import LLMClient, LLMError
 from app.ai_cfo.llm.cost_control import CostController
 from app.ai_cfo.llm.prompts import debt_optimizer_structured_prompt
@@ -441,13 +442,18 @@ class DebtOptimizer:
                 ),
             })
 
-        confidence = Confidence.HIGH
-        if any(d.is_assumed_rate or d.is_assumed_minimum for d in sorted_debts):
-            confidence = Confidence.MEDIUM
-        if all(d.is_assumed_rate and d.is_assumed_minimum for d in sorted_debts):
-            confidence = Confidence.LOW
-        if months >= MAX_PROJECTION_MONTHS or warnings:
-            confidence = Confidence.LOW
+        any_assumed_rate = any(d.is_assumed_rate for d in sorted_debts)
+        any_assumed_min = any(d.is_assumed_minimum for d in sorted_debts)
+
+        scorer = ConfidenceScorer().add("deterministic_calculation")
+        if not any_assumed_rate and not any_assumed_min:
+            scorer.add("complete_required_inputs").add("direct_accounting_data")
+        scorer.add_if(any_assumed_rate, "missing_interest_rate")
+        scorer.add_if(any_assumed_min, "missing_minimum_payment")
+        scorer.add_if(months >= MAX_PROJECTION_MONTHS, "forecast_long_horizon")
+        scorer.add_if(bool(warnings), "many_assumptions")
+        confidence_score = scorer.build()
+        confidence = Confidence(confidence_score.label.value)
 
         payoff_order = [
             {
@@ -484,6 +490,7 @@ class DebtOptimizer:
             "monthly_schedule": schedule,
             "narrative": "",
         }
+        result.update(confidence_score.to_dict())
 
         if include_narrative:
             result["narrative"] = await self._generate_narrative(result)

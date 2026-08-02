@@ -6,12 +6,35 @@ from typing import Any, Literal, Optional, List, Union
 from pydantic import BaseModel, Field
 
 
+# ---------------------------------------------------------------------------
+# Confidence scoring fields (AI-1222)
+# ---------------------------------------------------------------------------
+
+
+class ConfidenceFactorSchema(BaseModel):
+    name: str
+    impact: float
+    explanation: str
+
+
+class ConfidenceFields(BaseModel):
+    """Optional confidence fields mixed into AI response schemas.
+
+    All fields are optional so existing clients that don't read them are
+    unaffected; engines that don't compute confidence simply omit them.
+    """
+    confidence_score: Optional[float] = Field(None, ge=0.0, le=1.0)
+    confidence_label: Optional[str] = None
+    confidence_factors: Optional[List[ConfidenceFactorSchema]] = None
+    confidence_explanation: Optional[str] = None
+
+
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000)
     session_id: Optional[int] = None
 
 
-class ChatResponse(BaseModel):
+class ChatResponse(ConfidenceFields):
     answer: str
     confidence: Optional[int] = None
     actions: Optional[List[dict]] = None
@@ -256,7 +279,7 @@ class WhatIfProjectionPoint(BaseModel):
     scenario_balance: Decimal
 
 
-class WhatIfResult(BaseModel):
+class WhatIfResult(ConfidenceFields):
     scenario_type: str
     scenario_label: str
     currency: str
@@ -323,7 +346,7 @@ class DebtOptimizerRequest(BaseModel):
     include_narrative: bool = False
 
 
-class DebtOptimizerResult(BaseModel):
+class DebtOptimizerResult(ConfidenceFields):
     strategy: str
     currency: str
     total_balance: Decimal
@@ -411,7 +434,7 @@ class SavingsGoalAllocationItem(BaseModel):
     target_date: Optional[str] = None
 
 
-class EmergencyFundResult(BaseModel):
+class EmergencyFundResult(ConfidenceFields):
     mode: str
     currency: str
     target_months_of_expenses: str
@@ -430,7 +453,7 @@ class EmergencyFundResult(BaseModel):
     narrative: str
 
 
-class SavingsCapacityResult(BaseModel):
+class SavingsCapacityResult(ConfidenceFields):
     mode: str
     currency: str
     avg_monthly_income: Decimal
@@ -450,7 +473,7 @@ class SavingsCapacityResult(BaseModel):
     narrative: str
 
 
-class GoalAllocationResult(BaseModel):
+class GoalAllocationResult(ConfidenceFields):
     mode: str
     currency: str
     strategy: str
@@ -467,7 +490,7 @@ class GoalAllocationResult(BaseModel):
     narrative: str
 
 
-class ReduceSpendingResult(BaseModel):
+class ReduceSpendingResult(ConfidenceFields):
     mode: str
     currency: str
     avg_monthly_income: Decimal
@@ -492,7 +515,7 @@ class StrategyComparisonItem(BaseModel):
     goal_count: int
 
 
-class CompareStrategiesResult(BaseModel):
+class CompareStrategiesResult(ConfidenceFields):
     mode: str
     currency: str
     monthly_available_savings: Decimal
@@ -539,7 +562,7 @@ class GoalPlannerStrategyMeta(BaseModel):
     description: str
 
 
-class GoalPlanItem(BaseModel):
+class GoalPlanItem(ConfidenceFields):
     goal_id: int
     goal_name: str
     target_amount: Decimal
@@ -580,7 +603,7 @@ class GoalPlannerRequest(BaseModel):
     monthly_family_contribution: Optional[Decimal] = Field(None, gt=0)
 
 
-class HypotheticalGoalResult(BaseModel):
+class HypotheticalGoalResult(ConfidenceFields):
     mode: str
     currency: str
     goal_name: str
@@ -601,7 +624,7 @@ class HypotheticalGoalResult(BaseModel):
     narrative: str
 
 
-class SingleGoalFeasibilityResult(BaseModel):
+class SingleGoalFeasibilityResult(ConfidenceFields):
     mode: str
     currency: str
     goal: GoalPlanItem
@@ -611,7 +634,7 @@ class SingleGoalFeasibilityResult(BaseModel):
     narrative: str
 
 
-class MultiGoalPrioritizationResult(BaseModel):
+class MultiGoalPrioritizationResult(ConfidenceFields):
     mode: str
     currency: str
     strategy: str
@@ -635,7 +658,7 @@ class DeadlineRescueOption(BaseModel):
     suggested_target: Optional[Decimal] = None
 
 
-class DeadlineRescueResult(BaseModel):
+class DeadlineRescueResult(ConfidenceFields):
     mode: str
     currency: str
     goal_id: int
@@ -655,7 +678,7 @@ class DeadlineRescueResult(BaseModel):
     narrative: str
 
 
-class FamilyGoalPlanResult(BaseModel):
+class FamilyGoalPlanResult(ConfidenceFields):
     mode: str
     currency: str
     family_id: Optional[int] = None
@@ -705,7 +728,7 @@ class ProactiveAlertTypeMeta(BaseModel):
     default_severity: str
 
 
-class ProactiveAlertCandidateSchema(BaseModel):
+class ProactiveAlertCandidateSchema(ConfidenceFields):
     alert_type: str
     severity: str
     title: str
@@ -726,3 +749,17 @@ class ProactiveAlertRunResponse(BaseModel):
 
 class ProactiveAlertPreviewResponse(BaseModel):
     candidates: List[ProactiveAlertCandidateSchema]
+
+
+# ---------------------------------------------------------------------------
+# Confidence rules schema (AI-1222)
+# ---------------------------------------------------------------------------
+
+
+class ConfidenceRulesResponse(BaseModel):
+    score_range: dict[str, float]
+    thresholds: dict[str, float]
+    base_score: float
+    labels: List[str]
+    positive_factors: List[ConfidenceFactorSchema]
+    negative_factors: List[ConfidenceFactorSchema]

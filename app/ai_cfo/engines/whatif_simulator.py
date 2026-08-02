@@ -17,6 +17,7 @@ from typing import Any, Optional
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai_cfo.confidence import ConfidenceScorer
 from app.ai_cfo.llm.client import LLMClient, LLMError
 from app.ai_cfo.llm.cost_control import CostController
 from app.ai_cfo.llm.prompts import what_if_structured_prompt
@@ -664,15 +665,24 @@ class WhatIfSimulator:
         scenario_monthly_net = baseline_monthly_net + delta_per_month
 
         # Confidence is lower when we have little historical data.
-        confidence = Confidence.HIGH
-        if snapshot.avg_monthly_income == 0 and snapshot.avg_monthly_expenses == 0:
-            confidence = Confidence.LOW
+        no_income = snapshot.avg_monthly_income == 0
+        no_expenses = snapshot.avg_monthly_expenses == 0
+        if no_income and no_expenses:
             warnings.append({
                 "severity": "medium",
                 "message": "No recent income or expense history was found; projections are highly uncertain.",
             })
-        elif snapshot.avg_monthly_income == 0 or snapshot.avg_monthly_expenses == 0:
-            confidence = Confidence.MEDIUM
+
+        scorer = ConfidenceScorer().add("deterministic_calculation")
+        if no_income and no_expenses:
+            scorer.add("low_transaction_history").add("many_assumptions")
+        elif no_income or no_expenses:
+            scorer.add("low_transaction_history")
+        else:
+            scorer.add("sufficient_history").add("direct_accounting_data")
+        scorer.add_if(months > 36, "forecast_long_horizon")
+        confidence_score = scorer.build()
+        confidence = Confidence(confidence_score.label.value)
 
         # Generic warning for negative projected ending balance.
         if projections and projections[-1]["scenario_balance"] < 0:
@@ -683,7 +693,7 @@ class WhatIfSimulator:
                 })
 
         # Disclaimer is always added by the router layer, but include a marker here.
-        return {
+        result = {
             "scenario_type": scenario_type,
             "scenario_label": label,
             "currency": snapshot.currency,
@@ -701,6 +711,8 @@ class WhatIfSimulator:
             "impact_metrics": impact_metrics,
             "narrative": "",
         }
+        result.update(confidence_score.to_dict())
+        return result
 
     # ------------------------------------------------------------------
     # Goal helpers

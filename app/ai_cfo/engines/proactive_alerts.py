@@ -17,6 +17,7 @@ from typing import Any, Optional
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai_cfo.confidence import ConfidenceScore, ConfidenceScorer
 from app.ai_cfo.llm.client import LLMClient, LLMError
 from app.ai_cfo.llm.cost_control import CostController
 from app.ai_cfo.llm.prompts import proactive_alert_structured_prompt
@@ -68,6 +69,26 @@ class ProactiveAlertCandidate:
     message: str
     related_entity_type: Optional[str] = None
     related_entity_id: Optional[int] = None
+    confidence_score: float = 0.6
+    confidence_label: str = "medium"
+    confidence_factors: list[dict] = None
+    confidence_explanation: str = ""
+
+    def __post_init__(self):
+        if self.confidence_factors is None:
+            self.confidence_factors = []
+
+    @classmethod
+    def with_confidence(cls, confidence: ConfidenceScore, **kwargs) -> "ProactiveAlertCandidate":
+        """Build a candidate, attaching a computed ConfidenceScore's fields."""
+        data = confidence.to_dict()
+        return cls(
+            confidence_score=data["confidence_score"],
+            confidence_label=data["confidence_label"],
+            confidence_factors=data["confidence_factors"],
+            confidence_explanation=data["confidence_explanation"],
+            **kwargs,
+        )
 
 
 class ProactiveAlertsError(Exception):
@@ -89,6 +110,14 @@ def _to_decimal(value: Any) -> Decimal:
 
 def _money(value: Any) -> Decimal:
     return _to_decimal(value).quantize(Decimal("0.001"))
+
+
+def _score(*factor_names: str) -> ConfidenceScore:
+    """Build a ConfidenceScore from named factors for alert candidates."""
+    scorer = ConfidenceScorer()
+    for name in factor_names:
+        scorer.add(name)
+    return scorer.build()
 
 
 class ProactiveAlertsEngine:
@@ -184,10 +213,12 @@ class ProactiveAlertsEngine:
             .where(Bill.due_date >= today)
             .where(Bill.due_date <= cutoff)
         )
+        bill_confidence = _score("deterministic_calculation", "direct_accounting_data", "complete_required_inputs")
         for bill in result.scalars().all():
             days_until = (bill.due_date - today).days
             severity = ProactiveAlertSeverity.CRITICAL if days_until <= 1 else ProactiveAlertSeverity.WARNING
-            candidates.append(ProactiveAlertCandidate(
+            candidates.append(ProactiveAlertCandidate.with_confidence(
+                bill_confidence,
                 alert_type=ProactiveAlertType.BILL_DUE_SOON,
                 severity=severity,
                 notification_type=NotificationType.BILL_DUE,
@@ -211,7 +242,8 @@ class ProactiveAlertsEngine:
         for bill in result.scalars().all():
             days_overdue = (today - bill.due_date).days
             severity = ProactiveAlertSeverity.CRITICAL if days_overdue > 7 else ProactiveAlertSeverity.WARNING
-            candidates.append(ProactiveAlertCandidate(
+            candidates.append(ProactiveAlertCandidate.with_confidence(
+                bill_confidence,
                 alert_type=ProactiveAlertType.BILL_OVERDUE,
                 severity=severity,
                 notification_type=NotificationType.BILL_OVERDUE,
@@ -243,10 +275,12 @@ class ProactiveAlertsEngine:
             .where(Subscription.next_billing_date >= today)
             .where(Subscription.next_billing_date <= cutoff)
         )
+        sub_confidence = _score("deterministic_calculation", "direct_accounting_data", "complete_required_inputs")
         for sub in result.scalars().all():
             days_until = (sub.next_billing_date - today).days
             severity = ProactiveAlertSeverity.WARNING if days_until <= 2 else ProactiveAlertSeverity.INFO
-            candidates.append(ProactiveAlertCandidate(
+            candidates.append(ProactiveAlertCandidate.with_confidence(
+                sub_confidence,
                 alert_type=ProactiveAlertType.SUBSCRIPTION_RENEWAL_SOON,
                 severity=severity,
                 notification_type=NotificationType.SUBSCRIPTION_RENEWAL,
@@ -283,7 +317,9 @@ class ProactiveAlertsEngine:
             return []
 
         excess = recent_expense - baseline_monthly
-        candidates = [ProactiveAlertCandidate(
+        confidence = _score("deterministic_calculation", "recent_data", "low_transaction_history")
+        candidates = [ProactiveAlertCandidate.with_confidence(
+            confidence,
             alert_type=ProactiveAlertType.HIGH_SPENDING_ANOMALY,
             severity=ProactiveAlertSeverity.WARNING,
             notification_type=NotificationType.ANOMALY_DETECTED,
@@ -327,7 +363,12 @@ class ProactiveAlertsEngine:
         if net_flow < Decimal("0"):
             severity = ProactiveAlertSeverity.CRITICAL
 
-        candidates = [ProactiveAlertCandidate(
+        if avg_income > 0:
+            confidence = _score("deterministic_calculation", "sufficient_history", "direct_accounting_data")
+        else:
+            confidence = _score("deterministic_calculation", "low_transaction_history")
+        candidates = [ProactiveAlertCandidate.with_confidence(
+            confidence,
             alert_type=ProactiveAlertType.NEGATIVE_CASH_FLOW,
             severity=severity,
             notification_type=NotificationType.AI_INSIGHT,
@@ -360,7 +401,9 @@ class ProactiveAlertsEngine:
 
         severity = ProactiveAlertSeverity.CRITICAL if months_of_expenses < Decimal("0.5") else ProactiveAlertSeverity.WARNING
         gap = (target_months * avg_expenses) - total_assets
-        candidates = [ProactiveAlertCandidate(
+        confidence = _score("deterministic_calculation", "many_assumptions")
+        candidates = [ProactiveAlertCandidate.with_confidence(
+            confidence,
             alert_type=ProactiveAlertType.LOW_EMERGENCY_FUND,
             severity=severity,
             notification_type=NotificationType.AI_INSIGHT,
@@ -401,7 +444,9 @@ class ProactiveAlertsEngine:
             if target_date is None:
                 continue
             if target_date <= today:
-                candidates.append(ProactiveAlertCandidate(
+                deadline_passed_confidence = _score("deterministic_calculation", "direct_accounting_data")
+                candidates.append(ProactiveAlertCandidate.with_confidence(
+                    deadline_passed_confidence,
                     alert_type=ProactiveAlertType.GOAL_DEADLINE_RISK,
                     severity=ProactiveAlertSeverity.CRITICAL,
                     notification_type=NotificationType.GOAL_MILESTONE,
@@ -423,7 +468,9 @@ class ProactiveAlertsEngine:
 
             shortfall = required_monthly - contribution
             severity = ProactiveAlertSeverity.WARNING if months_to_target > 3 else ProactiveAlertSeverity.CRITICAL
-            candidates.append(ProactiveAlertCandidate(
+            at_risk_confidence = _score("deterministic_calculation", "direct_accounting_data", "many_assumptions")
+            candidates.append(ProactiveAlertCandidate.with_confidence(
+                at_risk_confidence,
                 alert_type=ProactiveAlertType.GOAL_DEADLINE_RISK,
                 severity=severity,
                 notification_type=NotificationType.GOAL_MILESTONE,
@@ -508,7 +555,12 @@ class ProactiveAlertsEngine:
             "Review your debt payoff plan or consider the debt optimizer for guidance."
         )
 
-        candidates = [ProactiveAlertCandidate(
+        if loans:
+            confidence = _score("deterministic_calculation", "direct_accounting_data", "complete_required_inputs")
+        else:
+            confidence = _score("deterministic_calculation", "missing_minimum_payment")
+        candidates = [ProactiveAlertCandidate.with_confidence(
+            confidence,
             alert_type=ProactiveAlertType.DEBT_PRESSURE,
             severity=severity,
             notification_type=NotificationType.AI_INSIGHT,

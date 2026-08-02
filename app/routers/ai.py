@@ -51,6 +51,7 @@ from app.schemas.ai import (
     ChatSessionsResponse,
     ChatSessionResponse,
     ChatSuggestedQuestionsResponse,
+    ConfidenceRulesResponse,
     MemoryCreate,
     MemoryExtractRequest,
     MemoryExtractResponse,
@@ -91,6 +92,7 @@ from app.services.ai_orchestrator import AIOrchestrator
 from app.services.ai_chat import AIChatService
 from app.services.ai_forecast import AIForecastService
 from app.services.ai_memory_service import AIMemoryService, MemorySafetyError
+from app.ai_cfo.confidence import confidence_rules
 from app.config import get_settings
 
 settings = get_settings()
@@ -512,6 +514,14 @@ async def forget_memories(
         raise HTTPException(status_code=422, detail="Provide query or memory_id")
     await db.commit()
     return None
+
+
+@router.get("/confidence/rules", response_model=ConfidenceRulesResponse)
+async def confidence_scoring_rules(
+    user: User = Depends(require_tenant_member),
+):
+    """Return the confidence scoring thresholds, labels, and factor library."""
+    return ConfidenceRulesResponse(**confidence_rules())
 
 
 @router.get("/insights", response_class=HTMLResponse)
@@ -974,6 +984,10 @@ async def proactive_alerts_preview(
                 "message": c.message,
                 "related_entity_type": c.related_entity_type,
                 "related_entity_id": c.related_entity_id,
+                "confidence_score": c.confidence_score,
+                "confidence_label": c.confidence_label,
+                "confidence_factors": c.confidence_factors,
+                "confidence_explanation": c.confidence_explanation,
             }
             for c in candidates
         ]

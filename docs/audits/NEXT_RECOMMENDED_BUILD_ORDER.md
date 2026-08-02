@@ -10,9 +10,9 @@
 
 ## Executive Summary
 
-Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), and AI-1221 (AI Memory System) are **COMPLETE**. The database has 44 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and users can run read-only debt, savings, goal, proactive-alert, conversational, and memory-aware analyses through the AI CFO.
+Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), and AI-1222 (AI Confidence Scoring) are **COMPLETE**. The database has 44 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and users can run read-only debt, savings, goal, proactive-alert, conversational, and memory-aware analyses through the AI CFO, each carrying a transparent confidence score.
 
-The next card should be **AI-1222 — AI Confidence Scoring**, the next focused AI CFO engine in `PLAN_V2.md`.
+The next card should be **AI-1223 — Dashboard v2 (AI-Centric)**, the next focused card in `PLAN_V2.md`.
 
 ---
 
@@ -728,15 +728,39 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 30
+
+### Card 30: AI-1222 — AI Confidence Scoring ✅ DONE
+
+**PLAN_V2 Reference:** AI-1222 (AI Confidence Scoring)  
+**Type:** Feature / AI CFO  
+**Priority:** MEDIUM
+
+**Completed:**
+- Added `app/ai_cfo/confidence.py` with `ConfidenceScore`/`ConfidenceScorer`/factor library, thresholds high >= 0.75, medium >= 0.45, low < 0.45.
+- Wired confidence scoring into What-If Simulator, Debt Optimizer, Savings Optimizer, Goal Planner, Proactive Alerts, and AI Chat as additive optional response fields.
+- Added `GET /ai/confidence/rules` (auth required).
+- LLM narrative alone never boosts confidence; rule-based chat fallback is explicitly penalized via `llm_fallback`; explicit memory commands score high (deterministic, no LLM dependency).
+- No schema/migration changes.
+- Added 24 tests; full suite **406 passed, 1 skipped**.
+
+**Remaining:**
+- Confidence scores are not persisted/logged for feedback-driven threshold tuning.
+- No frontend confidence-badge UI.
+
+**Test results:** 406 passed, 1 skipped
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 30: AI-1222 — AI Confidence Scoring
+### Card 31: AI-1223 — Dashboard v2 (AI-Centric)
 
-**Decision:** With the AI Memory System complete, the next logical step is AI Confidence Scoring. It provides a consistent way for the AI Financial Coach to express uncertainty levels on insights, projections, and recommendations, reinforcing the educational-disclaimer pattern already used across the AI CFO engines.
+**Decision:** With What-If, Debt, Savings, Goal, Alerts, Chat, Memory, and Confidence Scoring all complete, the AI CFO backend is feature-rich but not yet surfaced cohesively. AI-1223 redesigns the dashboard to be AI-centric — insights, recommendations, and health score front-and-center — and can now display confidence badges using the `/ai/confidence/rules` contract.
 
-**What to tell the coding agent for AI-1222:**
+**What to tell the coding agent for AI-1223:**
 
-> "Implement AI-1222: AI Confidence Scoring. Add a confidence scoring layer to the AI CFO that labels outputs as high/medium/low confidence based on data quality, sample size, assumptions, and missing inputs. Integrate the score into existing engines (what-if, debt, savings, goal, alerts, chat) and return it in API responses. Keep RLS safety, do not modify financial records, use deterministic rules first, and add tests."
+> "Implement AI-1223: Dashboard v2 (AI-Centric). Redesign the dashboard to surface AI insights, recommendations, and the health score prominently, using the existing `/ai/insights`, `/ai/reports/daily`, and AI CFO engine endpoints. Show confidence labels (high/medium/low) on AI-generated cards using `/ai/confidence/rules` for thresholds/labels. Keep RLS safety, do not modify financial records, and add tests."
 
 ---
 

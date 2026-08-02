@@ -4,6 +4,7 @@ from sqlalchemy.orm import selectinload
 from datetime import datetime
 from typing import Optional, List
 
+from app.ai_cfo.confidence import ConfidenceScorer
 from app.ai_cfo.llm.client import LLMClient, LLMError
 from app.ai_cfo.llm.cost_control import CostController
 from app.ai_cfo.llm.prompts import chat_prompt
@@ -130,10 +131,23 @@ class AIChatService:
         try:
             memory = await memory_service.create_memory_from_explicit_statement(content)
             answer = f"Got it. I'll remember that: {memory.summary or memory.value}"
+            confidence = (
+                ConfidenceScorer()
+                .add("deterministic_calculation")
+                .add("no_llm_dependency")
+                .add("user_confirmed_memory")
+                .build()
+            )
         except MemorySafetyError as exc:
             answer = (
                 "I can't save that as a memory because it may contain sensitive information. "
                 f"{exc.message}"
+            )
+            confidence = (
+                ConfidenceScorer()
+                .add("deterministic_calculation")
+                .add("no_llm_dependency")
+                .build()
             )
         return ChatResponse(
             answer=safety.add_disclaimer(answer),
@@ -141,6 +155,7 @@ class AIChatService:
             tokens_used=0,
             estimated_cost=0.0,
             disclaimer=safety.disclaimer,
+            **confidence.to_dict(),
         )
 
     async def _handle_forget_command(
@@ -153,12 +168,19 @@ class AIChatService:
             answer = f"I've forgotten {count} memory item(s) matching '{content}'."
         else:
             answer = f"I couldn't find any memory matching '{content}'."
+        confidence = (
+            ConfidenceScorer()
+            .add("deterministic_calculation")
+            .add("no_llm_dependency")
+            .build()
+        )
         return ChatResponse(
             answer=safety.add_disclaimer(answer),
             confidence=100,
             tokens_used=0,
             estimated_cost=0.0,
             disclaimer=safety.disclaimer,
+            **confidence.to_dict(),
         )
 
     async def _handle_memory_query(
@@ -167,12 +189,20 @@ class AIChatService:
         """Return a safe summary of active memories."""
         safety = SafetyFilter()
         summary = await memory_service.get_memory_summary()
+        confidence = (
+            ConfidenceScorer()
+            .add("deterministic_calculation")
+            .add("no_llm_dependency")
+            .add("user_confirmed_memory")
+            .build()
+        )
         return ChatResponse(
             answer=safety.add_disclaimer(summary),
             confidence=100,
             tokens_used=0,
             estimated_cost=0.0,
             disclaimer=safety.disclaimer,
+            **confidence.to_dict(),
         )
 
     async def _get_or_create_session(
@@ -205,6 +235,13 @@ class AIChatService:
     async def _generate_response(self, message: str, session: AIChatSession) -> ChatResponse:
         """Generate AI response using LLM, with rule-based fallback."""
         safety = SafetyFilter()
+        deterministic_confidence = (
+            ConfidenceScorer()
+            .add("deterministic_calculation")
+            .add("no_llm_dependency")
+            .build()
+        )
+
         input_check = safety.check_input(message)
         if not input_check["allowed"]:
             return ChatResponse(
@@ -213,6 +250,7 @@ class AIChatService:
                 disclaimer=safety.disclaimer,
                 tokens_used=0,
                 estimated_cost=0.0,
+                **deterministic_confidence.to_dict(),
             )
 
         # Enforce tenant daily limit before calling the LLM.
@@ -228,6 +266,7 @@ class AIChatService:
                 disclaimer=safety.disclaimer,
                 tokens_used=0,
                 estimated_cost=0.0,
+                **deterministic_confidence.to_dict(),
             )
 
         # Build conversation history from recent messages.
@@ -260,12 +299,20 @@ class AIChatService:
                 )
 
                 answer = safety.sanitize(llm_response.content)
+                # An LLM narrative does not, by itself, raise numeric confidence;
+                # only confirmed memory usage adds a small personalization boost.
+                llm_confidence = (
+                    ConfidenceScorer()
+                    .add_if(bool(memory_context), "user_confirmed_memory")
+                    .build()
+                )
                 return ChatResponse(
                     answer=answer,
                     confidence=85,
                     tokens_used=llm_response.total_tokens,
                     estimated_cost=llm_response.cost_usd,
                     disclaimer=safety.disclaimer,
+                    **llm_confidence.to_dict(),
                 )
             except LLMError:
                 # Fall through to rule-based fallback.
@@ -303,6 +350,13 @@ class AIChatService:
             answer = "I'm your AI Financial Coach. I can help you with budgeting, goal planning, debt optimization, spending analysis, and financial forecasting. What specific area would you like to explore?"
 
         answer = safety.add_disclaimer(answer)
+        # This path runs because the LLM was unavailable/unconfigured or failed.
+        fallback_confidence = (
+            ConfidenceScorer()
+            .add("no_llm_dependency")
+            .add("llm_fallback")
+            .build()
+        )
         return ChatResponse(
             answer=answer,
             confidence=85,
@@ -314,6 +368,7 @@ class AIChatService:
             disclaimer=safety.disclaimer,
             tokens_used=0,
             estimated_cost=0.0,
+            **fallback_confidence.to_dict(),
         )
 
     async def get_suggested_questions(self, session_id: int) -> List[str]:

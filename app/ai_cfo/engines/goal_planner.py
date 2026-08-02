@@ -18,6 +18,7 @@ from typing import Any, Optional
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai_cfo.confidence import ConfidenceScore, ConfidenceScorer
 from app.ai_cfo.llm.client import LLMClient, LLMError
 from app.ai_cfo.llm.cost_control import CostController
 from app.ai_cfo.llm.prompts import goal_planner_structured_prompt
@@ -222,6 +223,11 @@ class GoalPlanner:
             target_date_override=target_date_override,
         )
 
+        goal_confidence = self._confidence_score(
+            snapshot, extra_factors=["incomplete_goal_data"] if plan.get("target_date") is None else None
+        )
+        plan.update(goal_confidence.to_dict())
+
         result = {
             "mode": GoalPlanMode.SINGLE_GOAL_FEASIBILITY.value,
             "currency": snapshot.currency,
@@ -231,9 +237,10 @@ class GoalPlanner:
                 {"description": "Contributions are assumed to continue unchanged unless overridden."},
             ],
             "warnings": plan.get("warnings", []),
-            "confidence": self._confidence(snapshot),
+            "confidence": goal_confidence.label.value,
             "narrative": "",
         }
+        result.update(goal_confidence.to_dict())
         result["narrative"] = await self._narrative(result, request)
         return result
 
@@ -304,6 +311,9 @@ class GoalPlanner:
         feasibility = self._feasibility_rating(
             required_monthly, snapshot.avg_monthly_net_flow, on_track
         )
+        confidence_score = self._confidence_score(
+            snapshot, extra_factors=["incomplete_goal_data"] if target_date is None else None
+        )
 
         result = {
             "mode": GoalPlanMode.HYPOTHETICAL_GOAL.value,
@@ -325,9 +335,10 @@ class GoalPlanner:
                 {"description": "Income/expense averages are based on posted journal entries from the last 90 days."},
             ],
             "warnings": warnings,
-            "confidence": self._confidence(snapshot),
+            "confidence": confidence_score.label.value,
             "narrative": "",
         }
+        result.update(confidence_score.to_dict())
         result["narrative"] = await self._narrative(result, request)
         return result
 
@@ -363,6 +374,7 @@ class GoalPlanner:
 
         total_allocated = sum(a for _, a in allocations)
         unallocated = _money(available_monthly - total_allocated)
+        missing_target_dates = any(g.target_date is None for g in goals)
 
         warnings: list[dict[str, str]] = []
         if goals_at_risk:
@@ -375,6 +387,10 @@ class GoalPlanner:
                 "severity": "low",
                 "message": f"Total remaining funding gap over {months} months is approximately {total_gap} {snapshot.currency}.",
             })
+
+        confidence_score = self._confidence_score(
+            snapshot, extra_factors=["incomplete_goal_data"] if missing_target_dates else None
+        )
 
         result = {
             "mode": GoalPlanMode.MULTI_GOAL_PRIORITIZATION.value,
@@ -392,9 +408,10 @@ class GoalPlanner:
                 {"description": "Projected completion assumes the allocated monthly amount continues unchanged."},
             ],
             "warnings": warnings,
-            "confidence": self._confidence(snapshot),
+            "confidence": confidence_score.label.value,
             "narrative": "",
         }
+        result.update(confidence_score.to_dict())
         result["narrative"] = await self._narrative(result, request)
         return result
 
@@ -471,6 +488,8 @@ class GoalPlanner:
                     ),
                 })
 
+        confidence_score = self._confidence_score(snapshot)
+
         result = {
             "mode": GoalPlanMode.DEADLINE_RESCUE.value,
             "currency": snapshot.currency,
@@ -490,9 +509,10 @@ class GoalPlanner:
                 {"description": "Current goal balance and monthly contribution are unchanged."},
             ],
             "warnings": warnings,
-            "confidence": self._confidence(snapshot),
+            "confidence": confidence_score.label.value,
             "narrative": "",
         }
+        result.update(confidence_score.to_dict())
         result["narrative"] = await self._narrative(result, request)
         return result
 
@@ -521,6 +541,10 @@ class GoalPlanner:
             goal_items.append(plan)
 
         total_allocated = sum(a for _, a in allocations)
+        missing_target_dates = any(g.target_date is None for g in goals)
+        confidence_score = self._confidence_score(
+            snapshot, extra_factors=["incomplete_goal_data"] if missing_target_dates else None
+        )
         result = {
             "mode": GoalPlanMode.FAMILY_GOAL_PLAN.value,
             "currency": snapshot.currency,
@@ -534,9 +558,10 @@ class GoalPlanner:
                 {"description": "Equal split is used for family goal allocation."},
             ],
             "warnings": [],
-            "confidence": self._confidence(snapshot),
+            "confidence": confidence_score.label.value,
             "narrative": "",
         }
+        result.update(confidence_score.to_dict())
         result["narrative"] = await self._narrative(result, request)
         return result
 
@@ -685,12 +710,26 @@ class GoalPlanner:
             return "medium"
         return "low"
 
+    def _confidence_score(
+        self,
+        snapshot: CashFlowSnapshot,
+        extra_factors: Optional[list[str]] = None,
+    ) -> ConfidenceScore:
+        scorer = ConfidenceScorer().add("deterministic_calculation")
+        no_income = snapshot.avg_monthly_income == 0
+        no_expenses = snapshot.avg_monthly_expenses == 0
+        if no_income and no_expenses:
+            scorer.add("low_transaction_history").add("many_assumptions")
+        elif no_income or no_expenses:
+            scorer.add("low_transaction_history")
+        else:
+            scorer.add("sufficient_history").add("direct_accounting_data")
+        for name in extra_factors or []:
+            scorer.add(name)
+        return scorer.build()
+
     def _confidence(self, snapshot: CashFlowSnapshot) -> str:
-        if snapshot.avg_monthly_income == 0 and snapshot.avg_monthly_expenses == 0:
-            return Confidence.LOW.value
-        if snapshot.avg_monthly_income == 0 or snapshot.avg_monthly_expenses == 0:
-            return Confidence.MEDIUM.value
-        return Confidence.HIGH.value
+        return self._confidence_score(snapshot).label.value
 
     # ------------------------------------------------------------------
     # Narrative

@@ -90,7 +90,7 @@
 | ACC-503A | Journal Entry Reversal Support | **Done** (`AccountingService.reverse_journal_entry`, reversal metadata, bill/subscription reversal integration, tests) |
 | BDG-1000 to BDG-1003 | Budgets | Partial (models, routes, service exist) |
 | DB-1100 to DB-1105 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI and DB-1105A family goals widget UI; Partial for remaining dashboard widgets |
-| AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client, AI-1214 What-If Simulator, AI-1211 Debt Optimizer, AI-1212 Savings Optimizer, AI-1213 Goal Planner, AI-1219 Proactive Alerts, AI-1220 AI Chat Interface, and AI-1221 AI Memory System; Partial for remaining AI engines |
+| AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client, AI-1214 What-If Simulator, AI-1211 Debt Optimizer, AI-1212 Savings Optimizer, AI-1213 Goal Planner, AI-1219 Proactive Alerts, AI-1220 AI Chat Interface, AI-1221 AI Memory System, and AI-1222 AI Confidence Scoring; Partial for remaining AI engines |
 | FAM-1300 | Family Finance Foundation | **Done** |
 | FAM-1301 | Family Account Visibility and Shared/Private Data Rules | **Done** |
 | FAM-1302 | Family Goals | **Done** |
@@ -355,9 +355,38 @@
 
 ---
 
+## Completed Card 30
+
+### Card 30: AI-1222 — AI Confidence Scoring ✅ DONE
+
+**PLAN_V2 Reference:** AI-1222 (AI Confidence Scoring)  
+**Type:** Feature / AI CFO  
+**Priority:** MEDIUM
+
+**Completed:**
+- Added `app/ai_cfo/confidence.py`: `ConfidenceLabel`, `ConfidenceFactor`, `ConfidenceScore`, `ConfidenceScorer`, `calculate_confidence_score`, `confidence_from_factors`, `label_from_score`, `explain_confidence`, `confidence_rules`.
+- Score range 0.0–1.0; thresholds high >= 0.75, medium >= 0.45, low < 0.45; base score 0.60.
+- 7 positive factors and 11 negative factors covering data completeness, recency, deterministic-vs-LLM origin, assumptions, forecast horizon, and LLM fallback.
+- Wired confidence scoring into the What-If Simulator, Debt Optimizer, Savings Optimizer, Goal Planner, Proactive Alerts, and AI Chat, in every case as additive optional fields that preserve existing response fields.
+- Added `ConfidenceFields` mixin and `ConfidenceFactorSchema`/`ConfidenceRulesResponse` to `app/schemas/ai.py`.
+- Added `GET /ai/confidence/rules` (auth required) returning thresholds, labels, and the factor library.
+- LLM narrative alone never boosts numeric confidence; a rule-based chat fallback (LLM unavailable/failed) is explicitly scored lower via the `llm_fallback` factor.
+- Explicit "remember"/"forget"/"what do you remember" chat commands score as high confidence (deterministic, no LLM dependency); confirmed memory gives a small personalization boost when used in free-form LLM prompts.
+- No database schema changes; no Alembic migration.
+- Added 24 integration/unit tests in `app/tests/integration/test_confidence.py`.
+- Full test suite: **406 passed, 1 skipped**.
+
+**Remaining:**
+- Confidence scores are not persisted/logged for later analysis or feedback-driven threshold tuning (deferred).
+- No frontend confidence-badge UI built in this card.
+
+**Test results:** 406 passed, 1 skipped
+
+---
+
 ## Latest Completed Card
 
-**AI-1221 - AI Memory System** is complete. Authenticated tenant members can save durable, privacy-safe preferences and context, control and forget those memories, and have them surfaced automatically in AI chat prompts. Tenant isolation and RLS remain enforced and the full test suite passes.
+**AI-1222 - AI Confidence Scoring** is complete. Every AI CFO engine and AI Chat response now carries a transparent `confidence_score`, `confidence_label`, and explained `confidence_factors`, reflecting data completeness, assumptions, and whether an LLM fallback was used — without modifying financial records or requiring schema changes. Tenant isolation and RLS remain enforced and the full test suite passes.
 
 ---
 
