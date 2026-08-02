@@ -54,6 +54,8 @@ def chat_prompt(
             context_parts.append(f"Net worth: {context['net_worth']}")
         if "currency" in context:
             context_parts.append(f"Currency: {context['currency']}")
+        if "memory_summary" in context and context["memory_summary"]:
+            context_parts.append(context["memory_summary"])
         if context_parts:
             messages.append({
                 "role": "system",

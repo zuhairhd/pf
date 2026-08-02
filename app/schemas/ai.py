@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+from enum import Enum
 from typing import Any, Literal, Optional, List, Union
 
 from pydantic import BaseModel, Field
@@ -52,6 +53,94 @@ class ChatHistoryResponse(BaseModel):
 
 class ChatSuggestedQuestionsResponse(BaseModel):
     questions: List[str]
+
+
+class MemoryType(str, Enum):
+    PREFERENCE = "preference"
+    GOAL_CONTEXT = "goal_context"
+    RISK_PROFILE = "risk_profile"
+    BEHAVIOR_PATTERN = "behavior_pattern"
+    DISMISSED_ADVICE = "dismissed_advice"
+    CUSTOM = "custom"
+
+
+class MemorySource(str, Enum):
+    EXPLICIT_USER_STATEMENT = "explicit_user_statement"
+    CHAT_INFERRED = "chat_inferred"
+    SYSTEM_GENERATED = "system_generated"
+
+
+class MemoryCreate(BaseModel):
+    memory_type: MemoryType = MemoryType.CUSTOM
+    key: str = Field(..., min_length=1, max_length=100)
+    value: str = Field(..., min_length=1, max_length=2000)
+    summary: Optional[str] = Field(None, max_length=255)
+    source: MemorySource = MemorySource.EXPLICIT_USER_STATEMENT
+    confidence_score: Optional[float] = Field(None, ge=0.0, le=1.0)
+    is_sensitive: bool = False
+    expires_at: Optional[str] = None
+
+
+class MemoryUpdate(BaseModel):
+    value: Optional[str] = Field(None, min_length=1, max_length=2000)
+    summary: Optional[str] = Field(None, max_length=255)
+    memory_type: Optional[MemoryType] = None
+    is_active: Optional[bool] = None
+    is_sensitive: Optional[bool] = None
+    confidence_score: Optional[float] = Field(None, ge=0.0, le=1.0)
+    expires_at: Optional[str] = None
+
+
+class MemoryResponse(BaseModel):
+    id: int
+    memory_type: str
+    key: str
+    value: str
+    summary: Optional[str] = None
+    source: str
+    confidence_score: Optional[float] = None
+    is_active: bool
+    is_sensitive: bool
+    expires_at: Optional[str] = None
+    deleted_at: Optional[str] = None
+    last_used_at: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+class MemoryListResponse(BaseModel):
+    memories: List[MemoryResponse]
+
+
+class MemorySearchRequest(BaseModel):
+    query: str = Field(..., min_length=1, max_length=200)
+    limit: int = Field(20, ge=1, le=100)
+
+
+class MemorySearchResponse(BaseModel):
+    memories: List[MemoryResponse]
+
+
+class MemoryExtractRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=2000)
+
+
+class MemoryExtractCandidate(BaseModel):
+    memory_type: str
+    key: str
+    value: str
+    summary: Optional[str] = None
+    source: str
+    confidence_score: Optional[float] = None
+
+
+class MemoryExtractResponse(BaseModel):
+    candidates: List[MemoryExtractCandidate]
+
+
+class MemoryForgetRequest(BaseModel):
+    query: Optional[str] = Field(None, min_length=1, max_length=200)
+    memory_id: Optional[int] = None
 
 
 class WhatIfRequest(BaseModel):

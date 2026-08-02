@@ -10,9 +10,9 @@
 
 ## Executive Summary
 
-Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), and AI-1220 (AI Chat Interface) are **COMPLETE**. The database has 43 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and users can run read-only debt, savings, goal, proactive-alert, and conversational analyses through the AI CFO.
+Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), and AI-1221 (AI Memory System) are **COMPLETE**. The database has 44 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and users can run read-only debt, savings, goal, proactive-alert, conversational, and memory-aware analyses through the AI CFO.
 
-The next card should be **AI-1221 — AI Memory System**, the next focused AI CFO engine in `PLAN_V2.md`.
+The next card should be **AI-1222 — AI Confidence Scoring**, the next focused AI CFO engine in `PLAN_V2.md`.
 
 ---
 
@@ -704,15 +704,39 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 29
+
+### Card 29: AI-1221 — AI Memory System ✅ DONE
+
+**PLAN_V2 Reference:** AI-1221 (AI Memory System)  
+**Type:** Feature / AI CFO  
+**Priority:** HIGH
+
+**Completed:**
+- Added `AIMemory`, `AIMemoryType`, and `AIMemorySource` models and Alembic migration `360b89eed134` with RLS + FORCE RLS.
+- Added memory schemas and `AIMemoryService` with safety filtering, CRUD, search, prompt-context building, and forget behavior.
+- Integrated memory into chat: `remember that ...`, `forget ...`, `what do you remember about me?`, and automatic prompt context.
+- Added `/ai/memory/*` routes for list, create, get, update, delete, search, extract, and forget.
+- Enforced tenant/user scoping and RLS; cross-tenant access returns `404`.
+- Added 18 integration tests; full suite **382 passed, 1 skipped**.
+
+**Remaining:**
+- Richer inference of memory from natural chat beyond explicit commands.
+- Background cleanup job for expired memories if retention policies are defined.
+
+**Test results:** 382 passed, 1 skipped
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 29: AI-1221 — AI Memory System
+### Card 30: AI-1222 — AI Confidence Scoring
 
-**Decision:** With the AI Chat Interface complete, the next logical step is the AI Memory System. It maintains context across separate chat sessions, stores short-term and long-term memory, and enables the AI Financial Coach to remember user preferences, recurring topics, and key financial facts without exposing raw transaction data.
+**Decision:** With the AI Memory System complete, the next logical step is AI Confidence Scoring. It provides a consistent way for the AI Financial Coach to express uncertainty levels on insights, projections, and recommendations, reinforcing the educational-disclaimer pattern already used across the AI CFO engines.
 
-**What to tell the coding agent for AI-1221:**
+**What to tell the coding agent for AI-1222:**
 
-> "Implement AI-1221: AI Memory System. Build tenant-scoped, privacy-safe memory storage for the AI CFO. Support short-term memory (last 10 messages of current session), long-term memory across sessions (user preferences, recurring topics, key financial facts), and a memory retrieval/summarization layer. Keep RLS safety, do not store raw transaction details, use existing LLM client/fallback, and add tests. Do not build WebSocket real-time infrastructure unless already planned."
+> "Implement AI-1222: AI Confidence Scoring. Add a confidence scoring layer to the AI CFO that labels outputs as high/medium/low confidence based on data quality, sample size, assumptions, and missing inputs. Integrate the score into existing engines (what-if, debt, savings, goal, alerts, chat) and return it in API responses. Keep RLS safety, do not modify financial records, use deterministic rules first, and add tests."
 
 ---
 

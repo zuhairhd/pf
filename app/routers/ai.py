@@ -1,3 +1,6 @@
+from datetime import datetime
+from decimal import Decimal
+
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
@@ -31,7 +34,15 @@ from app.core.security import (
     require_tenant_admin,
     require_tenant_member,
 )
-from app.models import AIInsight, AIReport, AIChatSession, AIChatMessage, User
+from app.models import (
+    AIInsight,
+    AIReport,
+    AIChatSession,
+    AIChatMessage,
+    AIMemoryType,
+    AIMemorySource,
+    User,
+)
 from app.schemas.ai import (
     ChatHistoryResponse,
     ChatMessageResponse,
@@ -40,6 +51,15 @@ from app.schemas.ai import (
     ChatSessionsResponse,
     ChatSessionResponse,
     ChatSuggestedQuestionsResponse,
+    MemoryCreate,
+    MemoryExtractRequest,
+    MemoryExtractResponse,
+    MemoryForgetRequest,
+    MemoryListResponse,
+    MemoryResponse,
+    MemorySearchRequest,
+    MemorySearchResponse,
+    MemoryUpdate,
     DebtOptimizerCompareResponse,
     DebtOptimizerRequest,
     DebtOptimizerResponse,
@@ -70,6 +90,7 @@ from app.schemas.ai import (
 from app.services.ai_orchestrator import AIOrchestrator
 from app.services.ai_chat import AIChatService
 from app.services.ai_forecast import AIForecastService
+from app.services.ai_memory_service import AIMemoryService, MemorySafetyError
 from app.config import get_settings
 
 settings = get_settings()
@@ -291,6 +312,205 @@ async def delete_chat_session(
     deleted = await service.delete_session(session_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Chat session not found")
+    return None
+
+
+def _format_memory(memory) -> dict:
+    return {
+        "id": memory.id,
+        "memory_type": memory.memory_type.value,
+        "key": memory.key,
+        "value": memory.value,
+        "summary": memory.summary,
+        "source": memory.source.value,
+        "confidence_score": (
+            float(memory.confidence_score) if memory.confidence_score is not None else None
+        ),
+        "is_active": memory.is_active,
+        "is_sensitive": memory.is_sensitive,
+        "expires_at": memory.expires_at.isoformat() if memory.expires_at else None,
+        "deleted_at": memory.deleted_at.isoformat() if memory.deleted_at else None,
+        "last_used_at": memory.last_used_at.isoformat() if memory.last_used_at else None,
+        "created_at": memory.created_at.isoformat() if memory.created_at else None,
+        "updated_at": memory.updated_at.isoformat() if memory.updated_at else None,
+    }
+
+
+def _parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid datetime: {value}") from exc
+
+
+@router.get("/memory", response_model=MemoryListResponse)
+async def list_memories(
+    memory_type: Optional[str] = None,
+    active_only: bool = True,
+    limit: int = 100,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """List AI memories for the current tenant/user."""
+    service = AIMemoryService(db, user.organization_id, user.id)
+    type_enum = None
+    if memory_type:
+        try:
+            type_enum = AIMemoryType(memory_type)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid memory_type: {memory_type}") from exc
+    memories = await service.list_memories(
+        active_only=active_only,
+        memory_type=type_enum,
+        limit=limit,
+        offset=offset,
+    )
+    return MemoryListResponse(memories=[_format_memory(m) for m in memories])
+
+
+@router.post("/memory", response_model=MemoryResponse, status_code=201)
+async def create_memory(
+    request: MemoryCreate,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Create or update an AI memory."""
+    service = AIMemoryService(db, user.organization_id, user.id)
+    try:
+        memory = await service.create_memory(
+            memory_type=AIMemoryType(request.memory_type.value),
+            key=request.key,
+            value=request.value,
+            summary=request.summary,
+            source=AIMemorySource(request.source.value),
+            confidence_score=(
+                Decimal(str(request.confidence_score)) if request.confidence_score is not None else None
+            ),
+            is_sensitive=request.is_sensitive,
+            expires_at=_parse_iso_datetime(request.expires_at),
+        )
+    except MemorySafetyError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+    await db.commit()
+    return _format_memory(memory)
+
+
+@router.get("/memory/{memory_id}", response_model=MemoryResponse)
+async def get_memory(
+    memory_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Get a single active AI memory."""
+    service = AIMemoryService(db, user.organization_id, user.id)
+    memory = await service.get_memory(memory_id)
+    if memory is None or not memory.is_active:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return _format_memory(memory)
+
+
+@router.patch("/memory/{memory_id}", response_model=MemoryResponse)
+async def update_memory(
+    memory_id: int,
+    request: MemoryUpdate,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Update an AI memory."""
+    service = AIMemoryService(db, user.organization_id, user.id)
+    try:
+        memory = await service.update_memory(
+            memory_id,
+            value=request.value,
+            summary=request.summary,
+            memory_type=AIMemoryType(request.memory_type.value) if request.memory_type else None,
+            is_active=request.is_active,
+            is_sensitive=request.is_sensitive,
+            confidence_score=(
+                Decimal(str(request.confidence_score)) if request.confidence_score is not None else None
+            ),
+            expires_at=_parse_iso_datetime(request.expires_at),
+        )
+    except MemorySafetyError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+    if memory is None:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    await db.commit()
+    return _format_memory(memory)
+
+
+@router.delete("/memory/{memory_id}", status_code=204)
+async def delete_memory(
+    memory_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Forget/deactivate an AI memory."""
+    service = AIMemoryService(db, user.organization_id, user.id)
+    forgotten = await service.forget_memory(memory_id)
+    if not forgotten:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    await db.commit()
+    return None
+
+
+@router.post("/memory/search", response_model=MemorySearchResponse)
+async def search_memories(
+    request: MemorySearchRequest,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Search active AI memories by key/value."""
+    service = AIMemoryService(db, user.organization_id, user.id)
+    memories = await service.search_memories(request.query, limit=request.limit)
+    return MemorySearchResponse(memories=[_format_memory(m) for m in memories])
+
+
+@router.post("/memory/extract", response_model=MemoryExtractResponse)
+async def extract_memory_candidates(
+    request: MemoryExtractRequest,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Extract candidate memories from text without storing them."""
+    service = AIMemoryService(db, user.organization_id, user.id)
+    cmd = service.extract_memory_command(request.text)
+    candidates = []
+    if cmd["command"] == "remember":
+        memory_type = service._classify_memory_type(cmd["content"])
+        candidates.append(
+            {
+                "memory_type": memory_type.value,
+                "key": service._derive_key(cmd["content"]),
+                "value": cmd["content"],
+                "summary": None,
+                "source": AIMemorySource.EXPLICIT_USER_STATEMENT.value,
+                "confidence_score": 0.95,
+            }
+        )
+    return MemoryExtractResponse(candidates=candidates)
+
+
+@router.post("/memory/forget", status_code=204)
+async def forget_memories(
+    request: MemoryForgetRequest,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Forget memories by query or id."""
+    service = AIMemoryService(db, user.organization_id, user.id)
+    if request.memory_id is not None:
+        forgotten = await service.forget_memory(request.memory_id)
+        if not forgotten:
+            raise HTTPException(status_code=404, detail="Memory not found")
+    elif request.query:
+        await service.forget_by_query(request.query)
+    else:
+        raise HTTPException(status_code=422, detail="Provide query or memory_id")
+    await db.commit()
     return None
 
 

@@ -10,6 +10,7 @@ from app.ai_cfo.llm.prompts import chat_prompt
 from app.ai_cfo.llm.safety import SafetyFilter
 from app.models.ai import AIChatSession, AIChatMessage
 from app.schemas.ai import ChatRequest, ChatResponse
+from app.services.ai_memory_service import AIMemoryService, MemorySafetyError
 from app.config import get_settings
 
 settings = get_settings()
@@ -85,8 +86,19 @@ class AIChatService:
         self.db.add(user_message)
         await self.db.flush()
 
-        # Generate AI response using LLM with rule-based fallback.
-        response = await self._generate_response(message, session)
+        # Handle explicit memory commands before invoking the LLM.
+        memory_service = AIMemoryService(self.db, self.tenant_id, self.user_id)
+        cmd = memory_service.extract_memory_command(message)
+
+        if cmd["command"] == "remember":
+            response = await self._handle_remember_command(cmd["content"], memory_service)
+        elif cmd["command"] == "forget":
+            response = await self._handle_forget_command(cmd["content"], memory_service)
+        elif cmd["command"] == "query":
+            response = await self._handle_memory_query(memory_service)
+        else:
+            # Generate AI response using LLM with rule-based fallback.
+            response = await self._generate_response(message, session)
 
         # Store AI response
         ai_message = AIChatMessage(
@@ -109,6 +121,59 @@ class AIChatService:
         # Include session_id in response for client state
         response.session_id = session.id
         return response
+
+    async def _handle_remember_command(
+        self, content: str, memory_service: AIMemoryService
+    ) -> ChatResponse:
+        """Save an explicit user statement as memory and return confirmation."""
+        safety = SafetyFilter()
+        try:
+            memory = await memory_service.create_memory_from_explicit_statement(content)
+            answer = f"Got it. I'll remember that: {memory.summary or memory.value}"
+        except MemorySafetyError as exc:
+            answer = (
+                "I can't save that as a memory because it may contain sensitive information. "
+                f"{exc.message}"
+            )
+        return ChatResponse(
+            answer=safety.add_disclaimer(answer),
+            confidence=100,
+            tokens_used=0,
+            estimated_cost=0.0,
+            disclaimer=safety.disclaimer,
+        )
+
+    async def _handle_forget_command(
+        self, content: str, memory_service: AIMemoryService
+    ) -> ChatResponse:
+        """Deactivate memories matching the user's request."""
+        safety = SafetyFilter()
+        count = await memory_service.forget_by_query(content)
+        if count:
+            answer = f"I've forgotten {count} memory item(s) matching '{content}'."
+        else:
+            answer = f"I couldn't find any memory matching '{content}'."
+        return ChatResponse(
+            answer=safety.add_disclaimer(answer),
+            confidence=100,
+            tokens_used=0,
+            estimated_cost=0.0,
+            disclaimer=safety.disclaimer,
+        )
+
+    async def _handle_memory_query(
+        self, memory_service: AIMemoryService
+    ) -> ChatResponse:
+        """Return a safe summary of active memories."""
+        safety = SafetyFilter()
+        summary = await memory_service.get_memory_summary()
+        return ChatResponse(
+            answer=safety.add_disclaimer(summary),
+            confidence=100,
+            tokens_used=0,
+            estimated_cost=0.0,
+            disclaimer=safety.disclaimer,
+        )
 
     async def _get_or_create_session(
         self, message: str, session_id: Optional[int] = None
@@ -168,10 +233,16 @@ class AIChatService:
         # Build conversation history from recent messages.
         history = await self._build_history(session.id)
 
+        # Load durable memory context for the prompt.
+        memory_service = AIMemoryService(self.db, self.tenant_id, self.user_id)
+        memory_context = await memory_service.get_prompt_context()
+
         client = LLMClient()
         if client.is_configured():
             try:
                 context = {"currency": settings.CURRENCY_DEFAULT}
+                if memory_context:
+                    context["memory_summary"] = memory_context
                 llm_response = await client.complete(
                     messages=chat_prompt(message, context=context, history=history),
                     temperature=0.7,

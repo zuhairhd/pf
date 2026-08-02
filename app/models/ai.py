@@ -101,3 +101,43 @@ class AIChatMessage(Base, TimestampMixin):
     model = Column(String(50), nullable=True)
     
     session = relationship("AIChatSession", back_populates="messages")
+class AIMemoryType(str, enum.Enum):
+    PREFERENCE = "preference"
+    GOAL_CONTEXT = "goal_context"
+    RISK_PROFILE = "risk_profile"
+    BEHAVIOR_PATTERN = "behavior_pattern"
+    DISMISSED_ADVICE = "dismissed_advice"
+    CUSTOM = "custom"
+
+
+class AIMemorySource(str, enum.Enum):
+    EXPLICIT_USER_STATEMENT = "explicit_user_statement"
+    CHAT_INFERRED = "chat_inferred"
+    SYSTEM_GENERATED = "system_generated"
+
+
+class AIMemory(Base, TimestampMixin, TenantMixin):
+    """A durable, user-controlled AI memory item.
+
+    Memories are tenant-scoped and user-scoped. They are intended to store
+    preferences and durable context, never secrets, raw account numbers, or
+    other sensitive values.
+    """
+    __tablename__ = "ai_memories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    memory_type = Column(SQLEnum(AIMemoryType), nullable=False, default=AIMemoryType.CUSTOM)
+    key = Column(String(100), nullable=False)
+    value = Column(Text, nullable=False)
+    summary = Column(String(255), nullable=True)
+
+    source = Column(SQLEnum(AIMemorySource), nullable=False, default=AIMemorySource.EXPLICIT_USER_STATEMENT)
+    confidence_score = Column(Numeric(5, 4), nullable=True)  # 0.0000 - 1.0000
+
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_sensitive = Column(Boolean, default=False, nullable=False)
+    expires_at = Column(DateTime, nullable=True)
+    deleted_at = Column(DateTime, nullable=True)
+    last_used_at = Column(DateTime, nullable=True)

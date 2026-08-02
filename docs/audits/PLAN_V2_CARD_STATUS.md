@@ -90,7 +90,7 @@
 | ACC-503A | Journal Entry Reversal Support | **Done** (`AccountingService.reverse_journal_entry`, reversal metadata, bill/subscription reversal integration, tests) |
 | BDG-1000 to BDG-1003 | Budgets | Partial (models, routes, service exist) |
 | DB-1100 to DB-1105 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI and DB-1105A family goals widget UI; Partial for remaining dashboard widgets |
-| AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client, AI-1214 What-If Simulator, AI-1211 Debt Optimizer, AI-1212 Savings Optimizer, AI-1213 Goal Planner, AI-1219 Proactive Alerts, and AI-1220 AI Chat Interface; Partial for remaining AI engines |
+| AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client, AI-1214 What-If Simulator, AI-1211 Debt Optimizer, AI-1212 Savings Optimizer, AI-1213 Goal Planner, AI-1219 Proactive Alerts, AI-1220 AI Chat Interface, and AI-1221 AI Memory System; Partial for remaining AI engines |
 | FAM-1300 | Family Finance Foundation | **Done** |
 | FAM-1301 | Family Account Visibility and Shared/Private Data Rules | **Done** |
 | FAM-1302 | Family Goals | **Done** |
@@ -319,9 +319,45 @@
 
 ---
 
+## Completed Card 29
+
+### Card 29: AI-1221 — AI Memory System ✅ DONE
+
+**PLAN_V2 Reference:** AI-1221 (AI Memory System)  
+**Type:** Feature / AI CFO  
+**Priority:** HIGH
+
+**Completed:**
+- Added `AIMemory`, `AIMemoryType`, and `AIMemorySource` models to `app/models/ai.py`.
+- Created Alembic migration `360b89eed134` adding the `ai_memories` table with RLS + FORCE RLS and indexes on `tenant_id`, `user_id`, `memory_type`, `key`, and `is_active`.
+- Added structured Pydantic schemas in `app/schemas/ai.py` for memory CRUD, search, extraction, and forget operations.
+- Created `app/services/ai_memory_service.py` with:
+  - `create_memory`, `update_memory`, `list_memories`, `get_memory`, `forget_memory`, `forget_by_query`, `search_memories`
+  - Safety filtering that rejects secrets, passwords, API keys, OTPs, account/card numbers, and long numeric identifiers
+  - Duplicate prevention by `tenant_id + user_id + memory_type + key`
+  - `get_prompt_context()` to build a sanitized memory block for LLM prompts
+  - `get_memory_summary()` for the user-facing "what do you remember" response
+- Integrated memory into `app/services/ai_chat.py`:
+  - `remember that ...` creates/updates a memory
+  - `forget ...` deactivates matching memories
+  - `what do you remember about me?` returns a safe summary
+  - Normal messages include active non-sensitive memories in the LLM prompt context
+- Updated `app/ai_cfo/llm/prompts.py` to include a `memory_summary` block when present.
+- Added tenant-scoped `/ai/memory/*` routes in `app/routers/ai.py`.
+- Added 18 integration tests covering CRUD, safety, search, chat integration, cross-tenant isolation, RLS, and read-only financial safety.
+- Full test suite: **382 passed, 1 skipped**.
+
+**Remaining:**
+- Richer natural-language memory inference beyond explicit commands.
+- Background cleanup of expired/soft-deleted memories if retention policies are added.
+
+**Test results:** 382 passed, 1 skipped
+
+---
+
 ## Latest Completed Card
 
-**AI-1220 - AI Chat Interface** is complete. Authenticated tenant members can create chat sessions, send messages that maintain conversation context, list and delete their sessions, retrieve message history, and receive context-aware suggested questions. Tenant isolation and RLS remain enforced and the full test suite passes.
+**AI-1221 - AI Memory System** is complete. Authenticated tenant members can save durable, privacy-safe preferences and context, control and forget those memories, and have them surfaced automatically in AI chat prompts. Tenant isolation and RLS remain enforced and the full test suite passes.
 
 ---
 

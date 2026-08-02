@@ -14,7 +14,17 @@ from app.models.credit import CreditProfile, CreditScoreHistory
 from app.models.tax import TaxProfile, TaxPayment
 from app.models.document import Document, DocumentType, DocumentStatus
 from app.models.notification import Notification, NotificationSetting, NotificationType, NotificationChannel, NotificationStatus
-from app.models.ai import AIInsight, AIReport, AIChatSession, AIChatMessage, AIInsightType, AIInsightPriority
+from app.models.ai import (
+    AIInsight,
+    AIReport,
+    AIChatSession,
+    AIChatMessage,
+    AIInsightType,
+    AIInsightPriority,
+    AIMemory,
+    AIMemoryType,
+    AIMemorySource,
+)
 from app.models.audit import AuditLog, SystemEvent
 from app.models.admin_access import AdminAccessSession, AdminAccessStatus
 from app.models.analytics import UserActivity, FeatureUsage, AITokenUsage
