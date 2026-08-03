@@ -5,7 +5,7 @@ from app.models.user import User, UserRole
 from app.models.family import Family, FamilyMember, FamilyRole
 from app.models.auth import RefreshToken, EmailVerification, PasswordReset
 from app.models.accounting import Account, JournalEntry, JournalLine, RecurringTransaction
-from app.models.budget import Budget, BudgetCategory, BudgetAlert, BudgetPeriod
+from app.models.budget import Budget, BudgetCategory, BudgetAlert, BudgetPeriod, BudgetVisibility, BudgetStatus
 from app.models.goal import Goal, GoalContribution, GoalType, GoalStatus, GoalVisibility
 from app.models.loan import Loan, LoanPayment, LoanType, RepaymentStrategy
 from app.models.subscription import Subscription, Bill

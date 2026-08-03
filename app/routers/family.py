@@ -20,6 +20,15 @@ from app.schemas.family import (
     FamilyPermissionsResponse,
 )
 from app.schemas.accounting import AccountResponse
+from app.schemas.budget import (
+    BudgetCategoryCreate,
+    BudgetCategoryResponse,
+    BudgetCategoryUpdate,
+    BudgetSummaryResponse,
+    FamilyBudgetCreate,
+    FamilyBudgetResponse,
+    FamilyBudgetUpdate,
+)
 from app.schemas.goal import (
     FamilyGoalCreate,
     FamilyGoalUpdate,
@@ -29,6 +38,7 @@ from app.schemas.goal import (
     GoalProgressResponse,
 )
 from app.services.family_service import FamilyService, FamilyServiceError
+from app.services.family_budget_service import FamilyBudgetService, FamilyBudgetServiceError
 from app.services.family_goal_service import FamilyGoalService, FamilyGoalServiceError
 from app.services.family_account_access_service import FamilyAccountAccessService
 
@@ -522,3 +532,198 @@ async def get_goal_progress(
         contributions=[_to_contribution_response(c) for c in progress["contributions"]],
         is_on_track=progress["is_on_track"],
     )
+
+
+# ---------------------------------------------------------------------------
+# Family Budgets (FAM-1303)
+# ---------------------------------------------------------------------------
+
+
+def _budget_service(db: AsyncSession, user: User) -> FamilyBudgetService:
+    return FamilyBudgetService(db, tenant_id=user.organization_id, user=user)
+
+
+def _budget_error_status(message: str) -> int:
+    lower = message.lower()
+    if "not found" in lower:
+        return 404
+    if "permission" in lower or "access" in lower:
+        return 403
+    return 400
+
+
+async def _to_budget_response(
+    service: FamilyBudgetService, budget, *, can_manage: Optional[bool] = None
+) -> FamilyBudgetResponse:
+    return FamilyBudgetResponse(
+        id=budget.id,
+        tenant_id=budget.tenant_id,
+        family_id=budget.family_id,
+        owner_user_id=budget.owner_user_id,
+        created_by_user_id=budget.created_by_user_id,
+        name=budget.name,
+        period=budget.period.value if hasattr(budget.period, "value") else budget.period,
+        start_date=budget.start_date,
+        end_date=budget.end_date,
+        currency=budget.currency,
+        visibility=budget.visibility,
+        status=budget.status,
+        is_active=budget.is_active,
+        total_budgeted=budget.total_budgeted,
+        total_actual=budget.total_actual,
+        created_at=budget.created_at,
+        updated_at=budget.updated_at,
+        can_view=True,
+        can_manage=can_manage if can_manage is not None else await service.can_user_manage_budget(budget),
+    )
+
+
+@router.post("/budgets", response_model=FamilyBudgetResponse)
+async def create_family_budget(
+    payload: FamilyBudgetCreate,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Create a family-aware budget (private, shared, or family-wide)."""
+    service = _budget_service(db, user)
+    try:
+        budget = await service.create_budget(payload)
+    except FamilyBudgetServiceError as exc:
+        raise HTTPException(status_code=_budget_error_status(exc.message), detail=exc.message)
+    return await _to_budget_response(service, budget)
+
+
+@router.get("/budgets", response_model=list[FamilyBudgetResponse])
+async def list_family_budgets(
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """List budgets the current user is allowed to see."""
+    service = _budget_service(db, user)
+    budgets = await service.list_visible_budgets_for_user()
+    return [await _to_budget_response(service, b) for b in budgets]
+
+
+@router.get("/budgets/{budget_id}", response_model=FamilyBudgetResponse)
+async def get_family_budget(
+    budget_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Get a single budget if the user is allowed to view it."""
+    service = _budget_service(db, user)
+    try:
+        budget = await service.get_budget(budget_id)
+    except FamilyBudgetServiceError as exc:
+        raise HTTPException(status_code=_budget_error_status(exc.message), detail=exc.message)
+    return await _to_budget_response(service, budget)
+
+
+@router.patch("/budgets/{budget_id}", response_model=FamilyBudgetResponse)
+async def update_family_budget(
+    budget_id: int,
+    payload: FamilyBudgetUpdate,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Update a budget's name, period, visibility, or status."""
+    service = _budget_service(db, user)
+    try:
+        budget = await service.update_budget(budget_id, payload)
+    except FamilyBudgetServiceError as exc:
+        raise HTTPException(status_code=_budget_error_status(exc.message), detail=exc.message)
+    return await _to_budget_response(service, budget)
+
+
+@router.post("/budgets/{budget_id}/archive", response_model=FamilyBudgetResponse)
+async def archive_family_budget(
+    budget_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Archive a budget (soft-close; does not delete history)."""
+    service = _budget_service(db, user)
+    try:
+        budget = await service.archive_budget(budget_id)
+    except FamilyBudgetServiceError as exc:
+        raise HTTPException(status_code=_budget_error_status(exc.message), detail=exc.message)
+    return await _to_budget_response(service, budget)
+
+
+@router.get("/budgets/{budget_id}/summary", response_model=BudgetSummaryResponse)
+async def get_family_budget_summary(
+    budget_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Return a read-only budget-vs-actual summary computed from posted journal entries."""
+    service = _budget_service(db, user)
+    try:
+        summary = await service.calculate_budget_summary(budget_id)
+    except FamilyBudgetServiceError as exc:
+        raise HTTPException(status_code=_budget_error_status(exc.message), detail=exc.message)
+    return BudgetSummaryResponse(
+        budget=await _to_budget_response(service, summary["budget"]),
+        categories=[BudgetCategoryResponse(**c) for c in summary["categories"]],
+        total_planned=summary["total_planned"],
+        total_actual=summary["total_actual"],
+        total_remaining=summary["total_remaining"],
+        percent_used=summary["percent_used"],
+        currency=summary["currency"],
+        over_budget_category_ids=summary["over_budget_category_ids"],
+        near_limit_category_ids=summary["near_limit_category_ids"],
+    )
+
+
+@router.post("/budgets/{budget_id}/categories", response_model=FamilyBudgetResponse)
+async def create_family_budget_category(
+    budget_id: int,
+    payload: BudgetCategoryCreate,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Add a category to a budget, linked to an expense account the user can access."""
+    service = _budget_service(db, user)
+    try:
+        await service.create_budget_category(budget_id, payload)
+        budget = await service.get_budget(budget_id)
+    except FamilyBudgetServiceError as exc:
+        raise HTTPException(status_code=_budget_error_status(exc.message), detail=exc.message)
+    return await _to_budget_response(service, budget)
+
+
+@router.patch(
+    "/budgets/{budget_id}/categories/{category_id}", response_model=FamilyBudgetResponse
+)
+async def update_family_budget_category(
+    budget_id: int,
+    category_id: int,
+    payload: BudgetCategoryUpdate,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Update a budget category."""
+    service = _budget_service(db, user)
+    try:
+        await service.update_budget_category(budget_id, category_id, payload)
+        budget = await service.get_budget(budget_id)
+    except FamilyBudgetServiceError as exc:
+        raise HTTPException(status_code=_budget_error_status(exc.message), detail=exc.message)
+    return await _to_budget_response(service, budget)
+
+
+@router.delete("/budgets/{budget_id}/categories/{category_id}", response_model=FamilyBudgetResponse)
+async def delete_family_budget_category(
+    budget_id: int,
+    category_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Remove a category from a budget."""
+    service = _budget_service(db, user)
+    try:
+        await service.delete_budget_category(budget_id, category_id)
+        budget = await service.get_budget(budget_id)
+    except FamilyBudgetServiceError as exc:
+        raise HTTPException(status_code=_budget_error_status(exc.message), detail=exc.message)
+    return await _to_budget_response(service, budget)

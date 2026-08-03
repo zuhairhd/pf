@@ -150,10 +150,10 @@ class TestRLSChildTables:
                     text("""
                         INSERT INTO budgets
                         (name, period, start_date, end_date, total_budgeted, total_actual,
-                         is_active, tenant_id, created_at, updated_at)
+                         is_active, visibility, status, currency, tenant_id, created_at, updated_at)
                         VALUES
                         (:name, 'MONTHLY', CURRENT_DATE, CURRENT_DATE + 30, 1000, 0,
-                         true, :tenant_id, NOW(), NOW())
+                         true, 'private', 'active', 'OMR', :tenant_id, NOW(), NOW())
                         RETURNING id
                     """),
                     {"name": f"Budget {tenant_id} {self.run_id}", "tenant_id": tenant_id},

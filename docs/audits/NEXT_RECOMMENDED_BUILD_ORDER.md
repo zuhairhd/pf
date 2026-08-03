@@ -10,9 +10,9 @@
 
 ## Executive Summary
 
-Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), AI-1222 (AI Confidence Scoring), and AI-1223 (Dashboard v2) are **COMPLETE**. The database has 44 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and the dashboard is now the AI-centric "Today" landing page — surfacing health score, proactive alerts, confidence-aware recommendations, and optimizer shortcuts alongside the existing commitments and family-goals widgets, all strictly read-only.
+Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), AI-1222 (AI Confidence Scoring), AI-1223 (Dashboard v2), and FAM-1303 (Family Budgets) are **COMPLETE**. The database has 44 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and the dashboard is now the AI-centric "Today" landing page — surfacing health score, proactive alerts, confidence-aware recommendations, and optimizer shortcuts alongside the existing commitments, family-goals, and (as of FAM-1303) permission-aware family budgets, all strictly read-only.
 
-The next card should be **FAM-1303 — Family Budgets**, continuing the Family Finance epic in `PLAN_V2.md`.
+The next card should be **DB-1106A — Family Budget Dashboard Widget UI**, surfacing the FAM-1303 budget summary on the dashboard.
 
 ---
 
@@ -775,15 +775,39 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 32
+
+### Card 32: FAM-1303 — Family Budgets ✅ DONE
+
+**PLAN_V2 Reference:** FAM-1303 (Family Budgets)  
+**Type:** Feature / Family Finance  
+**Priority:** HIGH
+
+**Completed:**
+- Hardened `Budget` with `visibility`/`status`/`currency`/`owner_user_id`/`family_id`/`created_by_user_id` (migration `07c75f53dbf6`, existing data preserved, RLS/FORCE RLS intact).
+- Added `FamilyBudgetService` mirroring `FamilyAccountAccessService`'s role resolution: private/shared/family visibility, HEAD/PARENT full access, ADULT manages shared/family + own private, TEEN views shared/family + manages own private, CHILD view-only, VIEWER read-only.
+- Added `/family/budgets/*` CRUD + summary + category routes; fixed the previously broken (NameError, no template) legacy `/budgets` router to delegate to the same service.
+- Budget-vs-actual computed read-only from posted journal entries (no persistence side effects), with over-budget/near-limit detection.
+- Found and fixed a pre-existing RLS test regression (`test_rls_child_tables.py` raw-SQL insert predated the new NOT NULL columns).
+- Added 26 tests; full suite **451 passed, 1 skipped**.
+
+**Remaining:**
+- No dashboard widget UI (documented follow-up: DB-1106A).
+- No AI budget advisor/forecasting (out of scope).
+
+**Test results:** 451 passed, 1 skipped
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 32: FAM-1303 — Family Budgets
+### Card 33: DB-1106A — Family Budget Dashboard Widget UI
 
-**Decision:** With the full AI-1200 epic (AI-1201 through AI-1223) now complete and surfaced on an AI-centric dashboard, the next gap is in the Family Finance epic. FAM-1300–1302 (foundation, account visibility, family goals) are done; FAM-1303 (Family Budgets) is the next partial/missing item and continues the family-finance track that the dashboard already surfaces goals for.
+**Decision:** FAM-1303 built `FamilyBudgetService.get_active_family_budgets_summary()` specifically for dashboard consumption but intentionally did not wire any UI (per its own scope limits). The natural next step is surfacing that summary on the AI-1223 dashboard alongside the existing commitments and family-goals widgets, completing the same "widget on the dashboard" pattern already used twice before (DB-1104A, DB-1105A).
 
-**What to tell the coding agent for FAM-1303:**
+**What to tell the coding agent for DB-1106A:**
 
-> "Implement FAM-1303: Family Budgets. Extend the existing Budget model/service to support family-shared budgets with the same visibility/role rules already used for family goals and accounts (FamilyGoalService, FamilyAccountAccessService). Add a family budgets dashboard widget consistent with the existing commitments and family-goals widgets. Keep RLS safety, do not modify unrelated financial records, and add tests."
+> "Implement DB-1106A: Family Budget Dashboard Widget UI. Add a budgets widget to the dashboard (app/routers/dashboard.py, app/templates/dashboard/) using FamilyBudgetService.get_active_family_budgets_summary() and calculate_budget_summary(), following the same pattern as the existing commitments_widget.html and family_goals_widget.html (HTMX partial + refresh route). Show active budget count, over-budget/near-limit counts, and a link into /family/budgets. Keep the dashboard read-only, respect budget visibility/RLS, and add tests."
 
 ---
 

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Numeric, ForeignKey, Text, Date, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Numeric, ForeignKey, Text, Date, Enum as SQLEnum, Index
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from decimal import Decimal
@@ -14,10 +14,23 @@ class BudgetPeriod(str, enum.Enum):
     YEARLY = "yearly"
 
 
+class BudgetVisibility(str, enum.Enum):
+    """Visibility level for a family budget."""
+    PRIVATE = "private"
+    SHARED = "shared"
+    FAMILY = "family"
+
+
+class BudgetStatus(str, enum.Enum):
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+    CLOSED = "closed"
+
+
 class Budget(Base, TimestampMixin, TenantMixin):
     """A budget for a specific period."""
     __tablename__ = "budgets"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(200), nullable=False)
     period = Column(SQLEnum(BudgetPeriod), default=BudgetPeriod.MONTHLY, nullable=False)
@@ -26,9 +39,36 @@ class Budget(Base, TimestampMixin, TenantMixin):
     total_budgeted = Column(Numeric(15, 3), default=Decimal('0'), nullable=False)
     total_actual = Column(Numeric(15, 3), default=Decimal('0'), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
-    
+    currency = Column(String(3), default="OMR", nullable=False)
+
+    # Family ownership and visibility (FAM-1303)
+    visibility = Column(
+        String(20),
+        default=BudgetVisibility.PRIVATE.value,
+        nullable=False,
+        index=True,
+    )
+    status = Column(
+        String(20),
+        default=BudgetStatus.ACTIVE.value,
+        nullable=False,
+        index=True,
+    )
+    owner_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    family_id = Column(Integer, ForeignKey("families.id"), nullable=True, index=True)
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+
     # Relationships
-    categories = relationship("BudgetCategory", back_populates="budget", cascade="all, delete-orphan")
+    categories = relationship(
+        "BudgetCategory", back_populates="budget", cascade="all, delete-orphan", lazy="selectin"
+    )
+    owner = relationship("User", foreign_keys=[owner_user_id])
+    family = relationship("Family", foreign_keys=[family_id])
+    created_by = relationship("User", foreign_keys=[created_by_user_id])
+
+    __table_args__ = (
+        Index("ix_budgets_tenant_period", "tenant_id", "start_date", "end_date"),
+    )
 
 
 class BudgetCategory(Base, TimestampMixin):

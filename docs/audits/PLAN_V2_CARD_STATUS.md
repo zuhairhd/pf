@@ -88,14 +88,15 @@
 | BILL-800 to BILL-801A | Bills | **Done** (`app/routers/bills.py`, CRUD, mark-paid payment posting through `AccountingService`, mark-unpaid reversal support, upcoming/overdue, dashboard summary, tests) |
 | SUB-900 to SUB-901 | Subscriptions | **Done** (`app/routers/subscriptions.py`, CRUD, mark-paid payment posting through `AccountingService`, payment reversal support, pause/cancel/activate, renewals, equivalent amounts, tests) |
 | ACC-503A | Journal Entry Reversal Support | **Done** (`AccountingService.reverse_journal_entry`, reversal metadata, bill/subscription reversal integration, tests) |
-| BDG-1000 to BDG-1003 | Budgets | Partial (models, routes, service exist) |
+| BDG-1000 to BDG-1003 | Budgets | **Done** for FAM-1303 family budgets (visibility, permissions, categories, budget-vs-actual); legacy simple `/budgets` router fixed and delegates to the safe service |
 | DB-1100 to DB-1105 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI and DB-1105A family goals widget UI; Partial for remaining dashboard widgets |
 | AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client, AI-1214 What-If Simulator, AI-1211 Debt Optimizer, AI-1212 Savings Optimizer, AI-1213 Goal Planner, AI-1219 Proactive Alerts, AI-1220 AI Chat Interface, AI-1221 AI Memory System, AI-1222 AI Confidence Scoring, and AI-1223 Dashboard v2; Partial/Missing for AI-1215 Recommendation Engine, AI-1216/1217/1218 Daily/Weekly/Monthly Review Generation (not built as standalone cards) |
 | FAM-1300 | Family Finance Foundation | **Done** |
 | FAM-1301 | Family Account Visibility and Shared/Private Data Rules | **Done** |
 | FAM-1302 | Family Goals | **Done** |
-| FAM-1300 to FAM-1302 | Family Finance foundation, account visibility, family goals | **Done** | Family/goal models, visibility rules, dashboard widget, and goal contribution accounting posting are complete | Allowance/chore tracking and family budget sharing still deferred | Continue with FAM-1303 or reports |
-| FAM-1303 to FAM-1305 | Family Finance (budgets, allowances, chores, dashboard) | Partial |
+| FAM-1300 to FAM-1302 | Family Finance foundation, account visibility, family goals | **Done** | Family/goal models, visibility rules, dashboard widget, and goal contribution accounting posting are complete | Allowance/chore tracking still deferred | Continue with FAM-1304 or DB-1106A |
+| FAM-1303 | Family Budgets | **Done** (visibility/permissions, categories, budget-vs-actual, 26 tests) |
+| FAM-1304 to FAM-1305 | Family Finance (allowances, chores, dashboard) | Partial |
 | GOAL-1400 to GOAL-1402 | Goals | **Done** for GOAL-1401A goal-contribution accounting posting; Partial for remaining goal planning/reversal |
 | LOAN-1500 to LOAN-1505 | Loans | Partial (models, routes, service exist) |
 | NOTIF-1600 to NOTIF-1604 | Notifications | **Done** for NOTIF-1600 (email backend, reminder generation, CRUD/preferences routes, tests); Partial for remaining notification channels |
@@ -410,9 +411,33 @@
 
 ---
 
+## Completed Card 32
+
+### Card 32: FAM-1303 — Family Budgets ✅ DONE
+
+**PLAN_V2 Reference:** FAM-1303 (Family Budgets)  
+**Type:** Feature / Family Finance  
+**Priority:** HIGH
+
+**Completed:**
+- Hardened `Budget` model: added `visibility` (private/shared/family), `status` (active/archived/closed), `currency`, `owner_user_id`, `family_id`, `created_by_user_id`; migration `07c75f53dbf6` preserves existing budget data and RLS/FORCE RLS (already active on `budgets`; `budget_categories` already covered via child-table RLS).
+- Added `app/services/family_budget_service.py` (`FamilyBudgetService`): CRUD, role-based visibility/permission checks (mirroring `FamilyAccountAccessService`), budget-category management with expense-account validation, and read-only budget-vs-actual calculation from posted journal entries.
+- Added `/family/budgets/*` routes (create/list/get/update/archive/summary/category CRUD), all auth + tenant-scoped.
+- Fixed the pre-existing, broken `/budgets` router stub (had a `NameError` bug and no template) to require auth and delegate to `FamilyBudgetService`.
+- Fixed a pre-existing generic RLS test (`test_rls_child_tables.py`) whose raw-SQL `budgets` insert predated the new NOT NULL columns.
+- Added 26 integration tests; full suite **451 passed, 1 skipped**.
+
+**Remaining:**
+- No dashboard widget UI yet (documented follow-up: DB-1106A).
+- No AI budget advisor or forecasting (explicitly out of scope for this card).
+
+**Test results:** 451 passed, 1 skipped
+
+---
+
 ## Latest Completed Card
 
-**AI-1223 - Dashboard v2 (AI-Centric)** is complete. The dashboard is now the AI Personal CFO's "Today" landing page — leading with an AI brief, financial health snapshot, top proactive alerts, confidence-aware AI recommendations, and optimizer shortcuts — while the existing bills/subscriptions and family-goals widgets are preserved. All AI sections are strictly read-only, degrade safely when AI/LLM data is unavailable, and a latent private-goal-visibility leak in the Proactive Alerts engine was found and fixed along the way. Tenant isolation and RLS remain enforced and the full test suite passes.
+**FAM-1303 - Family Budgets** is complete. Tenants and families can now create private, shared, or family-wide budgets with role-based permissions matching the existing account/goal visibility model, link budget categories to expense accounts (with the same private-account protections used elsewhere), and view read-only budget-vs-actual summaries computed from posted journal entries. Tenant isolation and RLS remain enforced and the full test suite passes.
 
 ---
 
