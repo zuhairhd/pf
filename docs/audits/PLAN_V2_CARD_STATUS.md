@@ -96,7 +96,8 @@
 | FAM-1302 | Family Goals | **Done** |
 | FAM-1300 to FAM-1302 | Family Finance foundation, account visibility, family goals | **Done** | Family/goal models, visibility rules, dashboard widget, and goal contribution accounting posting are complete | Allowance/chore tracking still deferred | Continue with FAM-1304 or DB-1106A |
 | FAM-1303 | Family Budgets | **Done** (visibility/permissions, categories, budget-vs-actual, 26 tests) |
-| FAM-1304 to FAM-1305 | Family Finance (allowances, chores, dashboard) | Partial |
+| FAM-1304 | Allowance and Chore Tracking | **Done** (chores, completions, approval workflow, role-scoped allowance summary, 29 tests) |
+| FAM-1305 | Family Dashboard | Partial |
 | GOAL-1400 to GOAL-1402 | Goals | **Done** for GOAL-1401A goal-contribution accounting posting; Partial for remaining goal planning/reversal |
 | LOAN-1500 to LOAN-1505 | Loans | Partial (models, routes, service exist) |
 | NOTIF-1600 to NOTIF-1604 | Notifications | **Done** for NOTIF-1600 (email backend, reminder generation, CRUD/preferences routes, tests); Partial for remaining notification channels |
@@ -459,9 +460,34 @@
 
 ---
 
+## Completed Card 34
+
+### Card 34: FAM-1304 — Allowance and Chore Tracking ✅ DONE
+
+**PLAN_V2 Reference:** FAM-1304 (Allowance and Chore Tracking)  
+**Type:** Feature / Family Finance  
+**Priority:** MEDIUM
+
+**Completed:**
+- New tables `family_chores` and `family_chore_completions` (migration `356391296d35`), both tenant-scoped with RLS + FORCE RLS from creation; 46 tables total (was 44), RLS active on 37 (was 35).
+- Added `app/services/family_chore_service.py` (`FamilyChoreService`): chore CRUD, completion submit/approve/reject, and a read-only allowance summary (pending/approved/rejected totals, per-member breakdown, scoped by role).
+- Role matrix: HEAD/PARENT create/manage/approve everything and see all chores + the full allowance summary; ADULT sees all chores but cannot create/manage/approve (no elevated-permission flag exists yet); TEEN/CHILD see and can only act on chores assigned to themselves; VIEWER is fully read-only.
+- Added `/family/chores/*`, `/family/chore-completions/{id}/approve|reject`, and `/family/allowance-summary` routes.
+- No transactions, journal entries, or account-balance changes anywhere — allowance amounts are plain numeric fields only.
+- Added 29 integration tests; full suite **499 passed, 1 skipped**.
+
+**Remaining:**
+- No accounting posting for approved allowance (documented follow-up: FAM-1305 — Allowance Payment Posting Through Accounting Engine).
+- No dashboard widget yet, though `get_family_chore_summary()` was added specifically for one (documented follow-up: DB-1107A — Allowance and Chore Dashboard Widget UI).
+- No recurring-chore auto-regeneration; `frequency` is descriptive only today.
+
+**Test results:** 499 passed, 1 skipped
+
+---
+
 ## Latest Completed Card
 
-**DB-1106A - Family Budget Dashboard Widget UI** is complete. The dashboard now shows every family budget the current user is permitted to see — with planned/actual/remaining totals, percent-used progress bars, and over-budget/near-limit badges — alongside the existing commitments and family-goals widgets. The widget is strictly read-only (budget actuals are computed fresh, never persisted, by viewing it), respects the full FAM-1303 permission matrix, and never leaks a private account's name through a shared budget. Tenant isolation and RLS remain enforced and the full test suite passes.
+**FAM-1304 - Allowance and Chore Tracking** is complete. Heads and parents can define chores, optionally assign them to a family member with an allowance amount, and approve or reject submitted completions; a read-only allowance summary aggregates pending/approved/rejected totals per member, scoped to what each role is allowed to see. No payments, transactions, or journal entries are created — allowance amounts are tracked numerically only. Tenant isolation and RLS remain enforced (both new tables carry RLS + FORCE RLS from creation) and the full test suite passes.
 
 ---
 

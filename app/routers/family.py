@@ -37,8 +37,18 @@ from app.schemas.goal import (
     GoalContributionResponse,
     GoalProgressResponse,
 )
+from app.schemas.family_chore import (
+    AllowanceSummaryResponse,
+    ChoreApprovalRequest,
+    ChoreCompletionCreate,
+    ChoreCompletionResponse,
+    ChoreCreate,
+    ChoreResponse,
+    ChoreUpdate,
+)
 from app.services.family_service import FamilyService, FamilyServiceError
 from app.services.family_budget_service import FamilyBudgetService, FamilyBudgetServiceError
+from app.services.family_chore_service import FamilyChoreService, FamilyChoreServiceError
 from app.services.family_goal_service import FamilyGoalService, FamilyGoalServiceError
 from app.services.family_account_access_service import FamilyAccountAccessService
 
@@ -727,3 +737,211 @@ async def delete_family_budget_category(
     except FamilyBudgetServiceError as exc:
         raise HTTPException(status_code=_budget_error_status(exc.message), detail=exc.message)
     return await _to_budget_response(service, budget)
+
+
+# ---------------------------------------------------------------------------
+# Family Chores and Allowance Tracking (FAM-1304)
+# ---------------------------------------------------------------------------
+
+
+def _chore_service(db: AsyncSession, user: User) -> FamilyChoreService:
+    return FamilyChoreService(db, tenant_id=user.organization_id, user=user)
+
+
+def _chore_error_status(message: str) -> int:
+    lower = message.lower()
+    if "not found" in lower:
+        return 404
+    if "permission" in lower:
+        return 403
+    return 400
+
+
+async def _to_chore_response(service: FamilyChoreService, chore) -> ChoreResponse:
+    return ChoreResponse(
+        id=chore.id,
+        tenant_id=chore.tenant_id,
+        family_id=chore.family_id,
+        title=chore.title,
+        description=chore.description,
+        assigned_to_member_id=chore.assigned_to_member_id,
+        created_by_user_id=chore.created_by_user_id,
+        allowance_amount=chore.allowance_amount,
+        currency=chore.currency,
+        frequency=chore.frequency,
+        due_date=chore.due_date,
+        status=chore.status,
+        requires_approval=chore.requires_approval,
+        created_at=chore.created_at,
+        updated_at=chore.updated_at,
+        can_view=True,
+        can_manage=await service.can_user_manage_chore(chore),
+        can_submit_completion=await service.can_user_submit_completion(chore),
+    )
+
+
+def _to_completion_response(completion) -> ChoreCompletionResponse:
+    return ChoreCompletionResponse(
+        id=completion.id,
+        tenant_id=completion.tenant_id,
+        chore_id=completion.chore_id,
+        family_id=completion.family_id,
+        completed_by_member_id=completion.completed_by_member_id,
+        completed_at=completion.completed_at,
+        submitted_notes=completion.submitted_notes,
+        status=completion.status,
+        approved_by_user_id=completion.approved_by_user_id,
+        approved_at=completion.approved_at,
+        rejection_reason=completion.rejection_reason,
+        earned_amount=completion.earned_amount,
+        created_at=completion.created_at,
+        updated_at=completion.updated_at,
+    )
+
+
+@router.post("/chores", response_model=ChoreResponse)
+async def create_family_chore(
+    payload: ChoreCreate,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Create a chore. Requires HEAD or PARENT."""
+    service = _chore_service(db, user)
+    try:
+        chore = await service.create_chore(payload)
+    except FamilyChoreServiceError as exc:
+        raise HTTPException(status_code=_chore_error_status(exc.message), detail=exc.message)
+    return await _to_chore_response(service, chore)
+
+
+@router.get("/chores", response_model=list[ChoreResponse])
+async def list_family_chores(
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """List chores the current user is allowed to see."""
+    service = _chore_service(db, user)
+    chores = await service.list_visible_chores_for_user()
+    return [await _to_chore_response(service, c) for c in chores]
+
+
+@router.get("/chores/{chore_id}", response_model=ChoreResponse)
+async def get_family_chore(
+    chore_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Get a single chore if the user is allowed to view it."""
+    service = _chore_service(db, user)
+    try:
+        chore = await service.get_chore(chore_id)
+    except FamilyChoreServiceError as exc:
+        raise HTTPException(status_code=_chore_error_status(exc.message), detail=exc.message)
+    return await _to_chore_response(service, chore)
+
+
+@router.patch("/chores/{chore_id}", response_model=ChoreResponse)
+async def update_family_chore(
+    chore_id: int,
+    payload: ChoreUpdate,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Update a chore. Requires HEAD or PARENT."""
+    service = _chore_service(db, user)
+    try:
+        chore = await service.update_chore(chore_id, payload)
+    except FamilyChoreServiceError as exc:
+        raise HTTPException(status_code=_chore_error_status(exc.message), detail=exc.message)
+    return await _to_chore_response(service, chore)
+
+
+@router.post("/chores/{chore_id}/archive", response_model=ChoreResponse)
+async def archive_family_chore(
+    chore_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Archive a chore. Requires HEAD or PARENT."""
+    service = _chore_service(db, user)
+    try:
+        chore = await service.archive_chore(chore_id)
+    except FamilyChoreServiceError as exc:
+        raise HTTPException(status_code=_chore_error_status(exc.message), detail=exc.message)
+    return await _to_chore_response(service, chore)
+
+
+@router.post("/chores/{chore_id}/completions", response_model=ChoreCompletionResponse)
+async def submit_family_chore_completion(
+    chore_id: int,
+    payload: ChoreCompletionCreate,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Submit a completion for a chore assigned to the current user."""
+    service = _chore_service(db, user)
+    try:
+        completion = await service.submit_completion(chore_id, payload)
+    except FamilyChoreServiceError as exc:
+        raise HTTPException(status_code=_chore_error_status(exc.message), detail=exc.message)
+    return _to_completion_response(completion)
+
+
+@router.get("/chores/{chore_id}/completions", response_model=list[ChoreCompletionResponse])
+async def list_family_chore_completions(
+    chore_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """List completions submitted for a chore."""
+    service = _chore_service(db, user)
+    try:
+        completions = await service.list_completions(chore_id)
+    except FamilyChoreServiceError as exc:
+        raise HTTPException(status_code=_chore_error_status(exc.message), detail=exc.message)
+    return [_to_completion_response(c) for c in completions]
+
+
+@router.post("/chore-completions/{completion_id}/approve", response_model=ChoreCompletionResponse)
+async def approve_family_chore_completion(
+    completion_id: int,
+    payload: ChoreApprovalRequest,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Approve a chore completion. Requires HEAD or PARENT."""
+    service = _chore_service(db, user)
+    try:
+        completion = await service.approve_completion(completion_id, earned_amount=payload.earned_amount)
+    except FamilyChoreServiceError as exc:
+        raise HTTPException(status_code=_chore_error_status(exc.message), detail=exc.message)
+    return _to_completion_response(completion)
+
+
+@router.post("/chore-completions/{completion_id}/reject", response_model=ChoreCompletionResponse)
+async def reject_family_chore_completion(
+    completion_id: int,
+    payload: ChoreApprovalRequest,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Reject a chore completion with a reason. Requires HEAD or PARENT."""
+    service = _chore_service(db, user)
+    try:
+        completion = await service.reject_completion(
+            completion_id, rejection_reason=payload.rejection_reason or ""
+        )
+    except FamilyChoreServiceError as exc:
+        raise HTTPException(status_code=_chore_error_status(exc.message), detail=exc.message)
+    return _to_completion_response(completion)
+
+
+@router.get("/allowance-summary", response_model=AllowanceSummaryResponse)
+async def get_family_allowance_summary(
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Return a read-only allowance summary scoped to the current user's role."""
+    service = _chore_service(db, user)
+    summary = await service.get_allowance_summary()
+    return AllowanceSummaryResponse(**summary)
