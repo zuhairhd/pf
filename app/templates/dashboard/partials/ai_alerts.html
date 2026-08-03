@@ -1,0 +1,43 @@
+{% if ai_today %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-bell text-warning me-2"></i>Top Alerts</h6>
+        <a href="/notifications/list" class="btn btn-sm btn-outline-secondary">View All</a>
+    </div>
+    <div class="card-body">
+        {% if ai_today.alerts %}
+        {% for alert in ai_today.alerts %}
+        <div class="insight-item mb-3">
+            <div class="d-flex align-items-start justify-content-between">
+                <div class="d-flex align-items-start">
+                    <div class="insight-icon bg-{{ 'danger' if alert.severity == 'critical' else ('warning' if alert.severity == 'warning' else 'info') }} bg-opacity-10 text-{{ 'danger' if alert.severity == 'critical' else ('warning' if alert.severity == 'warning' else 'info') }} me-3">
+                        <i class="bi bi-{{ 'exclamation-octagon' if alert.severity == 'critical' else 'exclamation-triangle' }}"></i>
+                    </div>
+                    <div>
+                        <h6 class="mb-1">{{ alert.title }}</h6>
+                        <p class="mb-1 text-muted small">{{ alert.message }}</p>
+                        <span class="badge bg-{{ 'danger' if alert.severity == 'critical' else ('warning' if alert.severity == 'warning' else 'secondary') }} text-uppercase">{{ alert.severity }}</span>
+                        {% if alert.confidence_label %}
+                        <span class="badge bg-light text-dark border">{{ alert.confidence_label }} confidence</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% if alert.related_entity_type == 'bill' %}
+                <a href="/bills/" class="btn btn-sm btn-outline-primary text-nowrap">Review</a>
+                {% elif alert.related_entity_type == 'subscription' %}
+                <a href="/subscriptions/" class="btn btn-sm btn-outline-primary text-nowrap">Review</a>
+                {% elif alert.related_entity_type == 'goal' %}
+                <a href="/goals/" class="btn btn-sm btn-outline-primary text-nowrap">Review</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="text-center py-4">
+            <i class="bi bi-check-circle fs-1 text-success mb-3"></i>
+            <p class="text-muted mb-0">No active alerts. You're all caught up.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}

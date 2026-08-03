@@ -90,7 +90,7 @@
 | ACC-503A | Journal Entry Reversal Support | **Done** (`AccountingService.reverse_journal_entry`, reversal metadata, bill/subscription reversal integration, tests) |
 | BDG-1000 to BDG-1003 | Budgets | Partial (models, routes, service exist) |
 | DB-1100 to DB-1105 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI and DB-1105A family goals widget UI; Partial for remaining dashboard widgets |
-| AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client, AI-1214 What-If Simulator, AI-1211 Debt Optimizer, AI-1212 Savings Optimizer, AI-1213 Goal Planner, AI-1219 Proactive Alerts, AI-1220 AI Chat Interface, AI-1221 AI Memory System, and AI-1222 AI Confidence Scoring; Partial for remaining AI engines |
+| AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client, AI-1214 What-If Simulator, AI-1211 Debt Optimizer, AI-1212 Savings Optimizer, AI-1213 Goal Planner, AI-1219 Proactive Alerts, AI-1220 AI Chat Interface, AI-1221 AI Memory System, AI-1222 AI Confidence Scoring, and AI-1223 Dashboard v2; Partial/Missing for AI-1215 Recommendation Engine, AI-1216/1217/1218 Daily/Weekly/Monthly Review Generation (not built as standalone cards) |
 | FAM-1300 | Family Finance Foundation | **Done** |
 | FAM-1301 | Family Account Visibility and Shared/Private Data Rules | **Done** |
 | FAM-1302 | Family Goals | **Done** |
@@ -384,9 +384,35 @@
 
 ---
 
+## Completed Card 31
+
+### Card 31: AI-1223 — Dashboard v2 (AI-Centric) ✅ DONE
+
+**PLAN_V2 Reference:** AI-1223 (Dashboard v2 (AI-Centric))  
+**Type:** Feature / AI CFO  
+**Priority:** CRITICAL
+
+**Completed:**
+- Added `app/services/dashboard_ai_service.py` (`DashboardAIService`) composing a single read-only "Today" payload from existing services/engines: `HealthScoreService`, `CommitmentService`, `FamilyGoalService`, `ProactiveAlertsEngine.preview()`, `SavingsOptimizer`, `DebtOptimizer`.
+- Added `GET /dashboard/api/today` (JSON) and `GET /dashboard/partials/ai-today` (HTMX refresh), both auth/tenant-scoped.
+- Rebuilt `app/templates/dashboard/index.html` around new AI-centric partials (`ai_today.html` + 5 sub-partials): AI brief, health snapshot, top alerts, AI recommendations, optimizer quick actions — while preserving the existing commitments and family-goals widgets unchanged.
+- Confidence (AI-1222) surfaced throughout: overall summary confidence, per-alert confidence, per-insight-card confidence.
+- Deterministic-first AI narrative; optional `?include_narrative=true` LLM enhancement via existing safety/cost-control stack, always falls back safely (works with no `OPENAI_API_KEY`).
+- **Security fix:** `ProactiveAlertsEngine._detect_goal_risks()` did not respect family goal visibility, allowing a private goal to appear in another family member's alert text. Fixed to filter via `FamilyGoalService.can_view_goal()`, matching every other engine.
+- No schema changes; no Alembic migration.
+- Added 19 integration tests in `app/tests/integration/test_dashboard_ai.py`; full suite **425 passed, 1 skipped**.
+
+**Remaining:**
+- What-If/Debt/Savings/Goal Planner still have no dedicated HTML pages; dashboard shortcuts deep-link into AI Chat with a pre-filled question instead.
+- LLM-enhanced narrative not exposed in the default page UI (cost control); available via API flag only.
+
+**Test results:** 425 passed, 1 skipped
+
+---
+
 ## Latest Completed Card
 
-**AI-1222 - AI Confidence Scoring** is complete. Every AI CFO engine and AI Chat response now carries a transparent `confidence_score`, `confidence_label`, and explained `confidence_factors`, reflecting data completeness, assumptions, and whether an LLM fallback was used — without modifying financial records or requiring schema changes. Tenant isolation and RLS remain enforced and the full test suite passes.
+**AI-1223 - Dashboard v2 (AI-Centric)** is complete. The dashboard is now the AI Personal CFO's "Today" landing page — leading with an AI brief, financial health snapshot, top proactive alerts, confidence-aware AI recommendations, and optimizer shortcuts — while the existing bills/subscriptions and family-goals widgets are preserved. All AI sections are strictly read-only, degrade safely when AI/LLM data is unavailable, and a latent private-goal-visibility leak in the Proactive Alerts engine was found and fixed along the way. Tenant isolation and RLS remain enforced and the full test suite passes.
 
 ---
 

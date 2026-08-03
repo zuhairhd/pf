@@ -60,6 +60,16 @@
 
 {% block extra_scripts %}
 <script>
+// Pre-fill the chat input from a `?q=` query param (e.g. dashboard quick actions).
+// This only pre-fills the text box; it never auto-sends the message.
+(function prefillFromQuery() {
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get('q');
+    if (q) {
+        document.getElementById('chat-input').value = q;
+    }
+})();
+
 document.getElementById('chat-form').addEventListener('submit', async function(e) {
     e.preventDefault();
     const input = document.getElementById('chat-input');

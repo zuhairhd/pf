@@ -1,0 +1,26 @@
+{% if ai_today %}
+<div class="welcome-banner">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
+        <div>
+            <h4 class="mb-1">{{ ai_today.greeting }}! 👋</h4>
+            <p class="mb-0">{{ ai_today.summary }}</p>
+            <span class="badge mt-2 bg-{{ 'success' if ai_today.confidence_label == 'high' else ('warning' if ai_today.confidence_label == 'medium' else 'secondary') }}"
+                  title="{{ ai_today.confidence_explanation }}">
+                <i class="bi bi-shield-check me-1"></i>
+                {{ (ai_today.confidence_label or 'medium')|capitalize }} confidence
+            </span>
+        </div>
+        <div class="text-end">
+            <div class="health-score-circle" data-score="{{ ai_today.health_score.overall_score if ai_today.health_score else 0 }}">
+                <span class="score-value">{{ ai_today.health_score.overall_score if ai_today.health_score else '--' }}</span>
+                <span class="score-label">Health Score</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="welcome-banner">
+    <h4 class="mb-1">Welcome back! 👋</h4>
+    <p class="mb-0">AI-powered insights are temporarily unavailable. Your account data is safe and unchanged.</p>
+</div>
+{% endif %}

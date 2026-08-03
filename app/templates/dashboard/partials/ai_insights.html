@@ -1,0 +1,48 @@
+{% if ai_today %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-stars text-primary me-2"></i>AI Recommendations</h6>
+        <a href="/ai/insights" class="btn btn-sm btn-outline-primary">View All</a>
+    </div>
+    <div class="card-body">
+        {% if ai_today.insights %}
+        {% for insight in ai_today.insights %}
+        <div class="insight-item mb-3">
+            <div class="d-flex align-items-start">
+                <div class="insight-icon bg-primary bg-opacity-10 text-primary me-3">
+                    <i class="bi bi-lightbulb"></i>
+                </div>
+                <div class="flex-grow-1">
+                    <h6 class="mb-1">{{ insight.title }}</h6>
+                    <p class="mb-1 text-muted small">{{ insight.message }}</p>
+                    <div class="d-flex align-items-center gap-2">
+                        {% if insight.confidence_label %}
+                        <span class="badge bg-light text-dark border">{{ insight.confidence_label }} confidence</span>
+                        {% endif %}
+                        {% if insight.link %}
+                        <a href="{{ insight.link }}" class="small">Ask AI Coach &rarr;</a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="text-center py-4">
+            <i class="bi bi-stars fs-1 text-muted mb-3"></i>
+            <p class="text-muted mb-0">Add accounts, goals, or loans to unlock AI recommendations.</p>
+        </div>
+        {% endif %}
+
+        {% if ai_today.suggested_actions %}
+        <hr>
+        <p class="text-muted small mb-2 text-uppercase">Suggested Actions</p>
+        <ul class="mb-0 small">
+            {% for action in ai_today.suggested_actions %}
+            <li>{{ action }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+</div>
+{% endif %}

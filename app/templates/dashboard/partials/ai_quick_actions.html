@@ -1,0 +1,47 @@
+{% if ai_today %}
+<div class="card">
+    <div class="card-header">
+        <h6 class="mb-0"><i class="bi bi-lightning-charge text-warning me-2"></i>Quick Actions</h6>
+    </div>
+    <div class="card-body">
+        <div class="d-grid gap-2 mb-3">
+            {% for action in ai_today.quick_actions %}
+            <a href="{{ action.url }}" class="btn btn-outline-primary text-start d-flex align-items-center">
+                <i class="bi {{ action.icon }} me-2"></i>
+                <span>
+                    <span class="d-block">{{ action.label }}</span>
+                    <small class="text-muted">{{ action.description }}</small>
+                </span>
+            </a>
+            {% endfor %}
+        </div>
+
+        {% if ai_today.suggested_questions %}
+        <p class="text-muted small mb-2 text-uppercase">Ask the AI Coach</p>
+        <div class="d-flex flex-wrap gap-2">
+            {% for question in ai_today.suggested_questions %}
+            <a href="/ai/chat?q={{ question | urlencode }}" class="badge bg-light text-dark border text-decoration-none">
+                {{ question }}
+            </a>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div class="card-header">
+        <h6 class="mb-0"><i class="bi bi-lightning-charge text-warning me-2"></i>Quick Actions</h6>
+    </div>
+    <div class="card-body">
+        <div class="d-grid gap-2">
+            <a href="/ai/chat" class="btn btn-outline-dark">
+                <i class="bi bi-stars me-2"></i>Ask AI Coach
+            </a>
+            <a href="/goals/" class="btn btn-outline-info">
+                <i class="bi bi-bullseye me-2"></i>Set a Goal
+            </a>
+        </div>
+    </div>
+</div>
+{% endif %}

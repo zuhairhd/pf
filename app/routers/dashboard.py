@@ -17,11 +17,13 @@ from app.core.security import get_db_with_tenant_context, require_tenant_member,
 from app.models import User, UserRole
 from app.models.family import FamilyRole
 from app.models.database import get_db
-from app.models import Organization, Account, JournalEntry, JournalLine, Goal, Loan, Budget, AIInsight, AIReport
+from app.models import Organization, Account, JournalEntry, JournalLine, Goal, Loan, Budget, AIReport
 from app.notifications import NotificationDeliveryService
 from app.schemas.bill_subscription import BillResponse, SubscriptionResponse, CommitmentSummary
+from app.schemas.dashboard import DashboardToday
 from app.schemas.goal import FamilyGoalsDashboardResponse, DashboardFamilyGoalItem, GoalContributionCreate
 from app.services.bill_subscription_service import BillService, CommitmentService, SubscriptionService
+from app.services.dashboard_ai_service import DashboardAIService
 from app.services.family_goal_service import FamilyGoalService, FamilyGoalServiceError
 from app.services.health_score_service import HealthScoreService
 from app.services.ai_orchestrator import AIOrchestrator
@@ -142,16 +144,6 @@ async def dashboard(
     except Exception:
         health_score = None
 
-    # Get latest AI insights
-    result = await db.execute(
-        select(AIInsight)
-        .where(AIInsight.tenant_id == tenant_id)
-        .where(AIInsight.is_dismissed == False)
-        .order_by(AIInsight.created_at.desc())
-        .limit(3)
-    )
-    latest_insights = result.scalars().all()
-
     # Get latest AI report
     result = await db.execute(
         select(AIReport)
@@ -165,18 +157,64 @@ async def dashboard(
     commitments = await _build_commitments(db, tenant_id)
     family_goals = await _build_family_goals_dashboard(db, user)
 
+    try:
+        ai_service = DashboardAIService(db, tenant_id, user)
+        ai_today = await ai_service.build_today()
+    except Exception:
+        ai_today = None
+
     return templates.TemplateResponse(
         request,
         "dashboard/index.html",
         {
             "user": user,
             "health_score": health_score,
-            "latest_insights": latest_insights,
             "latest_report": latest_report,
             "currency": settings.CURRENCY_DEFAULT,
             "commitments": commitments,
             "family_goals": family_goals,
+            "ai_today": ai_today,
             "today": date.today().isoformat(),
+            "is_admin": _is_admin(user),
+        },
+    )
+
+
+@router.get("/api/today", response_model=DashboardToday)
+async def dashboard_today_api(
+    include_narrative: bool = False,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Return the AI-centric "Today" dashboard payload as UI-ready JSON.
+
+    Read-only: composes existing read-only AI CFO engines/services and
+    never creates, updates, or deletes financial records.
+    """
+    ai_service = DashboardAIService(db, user.organization_id, user)
+    today = await ai_service.build_today(include_narrative=include_narrative)
+    return DashboardToday(**today)
+
+
+@router.get("/partials/ai-today", response_class=HTMLResponse)
+async def ai_today_partial(
+    request: Request,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """HTMX partial to refresh the AI "Today" brief without a full page reload."""
+    try:
+        ai_service = DashboardAIService(db, user.organization_id, user)
+        ai_today = await ai_service.build_today()
+    except Exception:
+        ai_today = None
+
+    return templates.TemplateResponse(
+        request,
+        "dashboard/partials/ai_today.html",
+        {
+            "ai_today": ai_today,
+            "currency": settings.CURRENCY_DEFAULT,
             "is_admin": _is_admin(user),
         },
     )

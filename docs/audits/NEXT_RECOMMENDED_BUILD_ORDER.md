@@ -10,9 +10,9 @@
 
 ## Executive Summary
 
-Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), and AI-1222 (AI Confidence Scoring) are **COMPLETE**. The database has 44 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and users can run read-only debt, savings, goal, proactive-alert, conversational, and memory-aware analyses through the AI CFO, each carrying a transparent confidence score.
+Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), AI-1222 (AI Confidence Scoring), and AI-1223 (Dashboard v2) are **COMPLETE**. The database has 44 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and the dashboard is now the AI-centric "Today" landing page — surfacing health score, proactive alerts, confidence-aware recommendations, and optimizer shortcuts alongside the existing commitments and family-goals widgets, all strictly read-only.
 
-The next card should be **AI-1223 — Dashboard v2 (AI-Centric)**, the next focused card in `PLAN_V2.md`.
+The next card should be **FAM-1303 — Family Budgets**, continuing the Family Finance epic in `PLAN_V2.md`.
 
 ---
 
@@ -752,15 +752,38 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 31
+
+### Card 31: AI-1223 — Dashboard v2 (AI-Centric) ✅ DONE
+
+**PLAN_V2 Reference:** AI-1223 (Dashboard v2 (AI-Centric))  
+**Type:** Feature / AI CFO  
+**Priority:** CRITICAL
+
+**Completed:**
+- Added `DashboardAIService` composing a read-only "Today" payload from `HealthScoreService`, `CommitmentService`, `FamilyGoalService`, `ProactiveAlertsEngine.preview()`, `SavingsOptimizer`, and `DebtOptimizer`.
+- Added `GET /dashboard/api/today` and `GET /dashboard/partials/ai-today` (HTMX refresh).
+- Rebuilt the dashboard page around AI brief, health snapshot, top alerts, AI recommendation cards, and optimizer quick actions, while preserving the existing commitments and family-goals widgets.
+- Confidence (AI-1222) surfaced on the overall summary, each alert, and each insight card. Deterministic-first narrative with optional, safely-falling-back LLM enhancement.
+- Fixed a pre-existing privacy defect: `ProactiveAlertsEngine._detect_goal_risks()` didn't respect family goal visibility; now filtered via `FamilyGoalService.can_view_goal()`.
+- No schema changes; 19 new tests; full suite **425 passed, 1 skipped**.
+
+**Remaining:**
+- What-If/Debt/Savings/Goal Planner have no dedicated HTML pages yet; dashboard shortcuts deep-link into AI Chat with a pre-filled question.
+
+**Test results:** 425 passed, 1 skipped
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 31: AI-1223 — Dashboard v2 (AI-Centric)
+### Card 32: FAM-1303 — Family Budgets
 
-**Decision:** With What-If, Debt, Savings, Goal, Alerts, Chat, Memory, and Confidence Scoring all complete, the AI CFO backend is feature-rich but not yet surfaced cohesively. AI-1223 redesigns the dashboard to be AI-centric — insights, recommendations, and health score front-and-center — and can now display confidence badges using the `/ai/confidence/rules` contract.
+**Decision:** With the full AI-1200 epic (AI-1201 through AI-1223) now complete and surfaced on an AI-centric dashboard, the next gap is in the Family Finance epic. FAM-1300–1302 (foundation, account visibility, family goals) are done; FAM-1303 (Family Budgets) is the next partial/missing item and continues the family-finance track that the dashboard already surfaces goals for.
 
-**What to tell the coding agent for AI-1223:**
+**What to tell the coding agent for FAM-1303:**
 
-> "Implement AI-1223: Dashboard v2 (AI-Centric). Redesign the dashboard to surface AI insights, recommendations, and the health score prominently, using the existing `/ai/insights`, `/ai/reports/daily`, and AI CFO engine endpoints. Show confidence labels (high/medium/low) on AI-generated cards using `/ai/confidence/rules` for thresholds/labels. Keep RLS safety, do not modify financial records, and add tests."
+> "Implement FAM-1303: Family Budgets. Extend the existing Budget model/service to support family-shared budgets with the same visibility/role rules already used for family goals and accounts (FamilyGoalService, FamilyAccountAccessService). Add a family budgets dashboard widget consistent with the existing commitments and family-goals widgets. Keep RLS safety, do not modify unrelated financial records, and add tests."
 
 ---
 

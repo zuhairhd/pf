@@ -431,6 +431,16 @@ class ProactiveAlertsEngine:
         )
         goals = result.scalars().all()
 
+        if self.user is not None:
+            from app.services.family_goal_service import FamilyGoalService
+
+            goal_service = FamilyGoalService(self.db, self.tenant_id, self.user)
+            visible_goals = []
+            for goal in goals:
+                if await goal_service.can_view_goal(goal):
+                    visible_goals.append(goal)
+            goals = visible_goals
+
         candidates: list[ProactiveAlertCandidate] = []
         for goal in goals:
             target = _to_decimal(goal.target_amount)

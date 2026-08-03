@@ -319,6 +319,29 @@ def proactive_alert_structured_prompt(candidate: dict[str, Any]) -> list[dict[st
     ]
 
 
+def dashboard_brief_prompt(summary: dict[str, Any]) -> list[dict[str, str]]:
+    """Build a prompt for a short AI-centric dashboard "Today" brief.
+
+    Only an aggregated dashboard summary is sent — no raw transactions,
+    account numbers, or other personally identifiable details.
+    """
+    user_content = (
+        "Write a short, friendly 2-3 sentence 'Today' brief for a personal finance "
+        "dashboard. Be supportive and educational. Do not make definitive predictions, "
+        "do not give investment/tax/legal advice, and do not overstate certainty.\n\n"
+        f"Health score: {summary.get('health_score', 'unknown')}/100\n"
+        f"Top alert: {summary.get('top_alert', 'none')}\n"
+        f"Overdue bills: {summary.get('overdue_bills_count', 0)}\n"
+        f"Upcoming bills (7 days): {summary.get('upcoming_bills_count', 0)}\n"
+        f"Active goals: {summary.get('active_goals_count', 0)}\n"
+        f"Goal progress: {summary.get('goal_progress_percent', 'unknown')}%\n"
+    )
+    return [
+        _system_prompt(),
+        {"role": "user", "content": user_content},
+    ]
+
+
 __all__ = [
     "DEFAULT_DISCLAIMER",
     "chat_prompt",
@@ -330,4 +353,5 @@ __all__ = [
     "savings_optimizer_structured_prompt",
     "goal_planner_structured_prompt",
     "proactive_alert_structured_prompt",
+    "dashboard_brief_prompt",
 ]

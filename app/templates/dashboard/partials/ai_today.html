@@ -1,0 +1,32 @@
+<div id="ai-today-widget">
+    <div class="row mb-4">
+        <div class="col-12 position-relative">
+            <button
+                class="btn btn-sm btn-outline-secondary position-absolute top-0 end-0 m-2"
+                style="z-index: 2;"
+                hx-get="/dashboard/partials/ai-today"
+                hx-target="#ai-today-widget"
+                hx-swap="outerHTML"
+                title="Refresh AI brief"
+            >
+                <i class="bi bi-arrow-clockwise"></i>
+            </button>
+            {% include "dashboard/partials/ai_today_brief.html" %}
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-lg-8">
+            <div class="mb-3">
+                {% include "dashboard/partials/ai_health_snapshot.html" %}
+            </div>
+            <div class="mb-3">
+                {% include "dashboard/partials/ai_alerts.html" %}
+            </div>
+            {% include "dashboard/partials/ai_insights.html" %}
+        </div>
+        <div class="col-lg-4">
+            {% include "dashboard/partials/ai_quick_actions.html" %}
+        </div>
+    </div>
+</div>
