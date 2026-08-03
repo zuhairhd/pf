@@ -1,0 +1,61 @@
+<div class="budget-card mb-3 p-3 border rounded bg-light">
+    <div class="d-flex justify-content-between align-items-start mb-2 flex-wrap gap-2">
+        <div>
+            <h6 class="mb-1">{{ budget.name }}</h6>
+            <span class="badge bg-{% if budget.visibility == 'private' %}secondary{% elif budget.visibility == 'family' %}info{% else %}success{% endif %}">
+                {{ budget.visibility }}
+            </span>
+            <span class="badge bg-{% if budget.status == 'active' %}primary{% elif budget.status == 'archived' %}secondary{% else %}warning{% endif %}">
+                {{ budget.status }}
+            </span>
+            {% if budget.is_over_budget %}
+            <span class="badge bg-danger">Over budget</span>
+            {% elif budget.is_near_limit %}
+            <span class="badge bg-warning text-dark">Near limit</span>
+            {% endif %}
+            <small class="text-muted ms-2">{{ budget.period_start }} &rarr; {{ budget.period_end }}</small>
+        </div>
+        <div class="text-end">
+            <small class="text-muted">{{ currency }} {{ "%.3f"|format(budget.total_actual) }} / {{ currency }} {{ "%.3f"|format(budget.total_planned) }}</small>
+        </div>
+    </div>
+
+    <div class="progress mb-2" style="height: 20px;">
+        <div class="progress-bar {% if budget.is_over_budget %}bg-danger{% elif budget.is_near_limit %}bg-warning{% else %}bg-primary{% endif %}"
+             role="progressbar"
+             style="width: {{ [budget.percent_used, 100]|min }}%;"
+             aria-valuenow="{{ budget.percent_used }}"
+             aria-valuemin="0"
+             aria-valuemax="100">
+            {{ budget.percent_used }}%
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <small class="text-muted">Remaining: {{ currency }} {{ "%.3f"|format(budget.total_remaining) }}</small>
+        <div class="d-flex gap-2">
+            {% if budget.categories %}
+            <button class="btn btn-sm btn-outline-secondary"
+                    hx-get="/dashboard/partials/family-budgets/{{ budget.id }}/categories"
+                    hx-target="#budget-categories-{{ budget.id }}"
+                    hx-swap="innerHTML">
+                <i class="bi bi-list-ul"></i> Categories ({{ budget.categories|length }})
+            </button>
+            {% endif %}
+            <a href="/family/budgets" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-eye"></i> View
+            </a>
+            {% if budget.can_manage and budget.status == 'active' %}
+            <button class="btn btn-sm btn-outline-danger"
+                    hx-post="/dashboard/partials/family-budgets/{{ budget.id }}/archive"
+                    hx-target="#family-budgets-widget"
+                    hx-swap="outerHTML"
+                    hx-confirm="Archive this budget?">
+                <i class="bi bi-archive"></i>
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    <div id="budget-categories-{{ budget.id }}" class="mt-2"></div>
+</div>

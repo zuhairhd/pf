@@ -1,0 +1,92 @@
+<div id="family-budgets-widget" class="family-budgets-widget">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h6 class="mb-0">
+            <i class="bi bi-wallet2 text-primary me-2"></i>
+            Family Budgets
+        </h6>
+        <div class="d-flex gap-2 align-items-center">
+            {% if family_budgets and family_budgets.permissions and family_budgets.permissions.can_create_budget %}
+            <a href="/family/budgets" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-plus-lg me-1"></i> New Budget
+            </a>
+            {% endif %}
+            <button
+                class="btn btn-sm btn-outline-secondary"
+                hx-get="/dashboard/partials/family-budgets"
+                hx-target="#family-budgets-widget"
+                hx-swap="outerHTML"
+            >
+                <i class="bi bi-arrow-clockwise"></i>
+            </button>
+        </div>
+    </div>
+
+    <div class="card-body">
+        {% if action_error %}
+        <div class="alert alert-warning py-2 mb-3" role="alert">
+            {{ action_error }}
+        </div>
+        {% endif %}
+
+        {% if family_budgets is none %}
+        <div class="text-center py-4">
+            <i class="bi bi-exclamation-triangle fs-1 text-muted mb-3"></i>
+            <p class="text-muted mb-0">Budgets are temporarily unavailable. Your data is safe and unchanged.</p>
+        </div>
+        {% else %}
+
+        <!-- Summary Row -->
+        <div class="row g-3 mb-4">
+            <div class="col-sm-6 col-lg-3">
+                <div class="stat-card stat-card-sm">
+                    <p class="card-label text-muted mb-1">Active Budgets</p>
+                    <h5 class="card-value mb-0">{{ family_budgets.active_budgets_count }}</h5>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <div class="stat-card stat-card-sm">
+                    <p class="card-label text-muted mb-1">Planned</p>
+                    <h5 class="card-value mb-0">{{ currency }} {{ "%.3f"|format(family_budgets.total_planned) }}</h5>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <div class="stat-card stat-card-sm">
+                    <p class="card-label text-muted mb-1">Actual</p>
+                    <h5 class="card-value mb-0">{{ currency }} {{ "%.3f"|format(family_budgets.total_actual) }}</h5>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <div class="stat-card stat-card-sm">
+                    <p class="card-label text-muted mb-1">Avg % Used</p>
+                    <h5 class="card-value mb-0">{{ family_budgets.average_percent_used }}%</h5>
+                </div>
+            </div>
+        </div>
+
+        {% if family_budgets.over_budget_count > 0 or family_budgets.near_limit_count > 0 %}
+        <div class="d-flex gap-2 mb-3">
+            {% if family_budgets.over_budget_count > 0 %}
+            <span class="badge bg-danger">{{ family_budgets.over_budget_count }} over budget</span>
+            {% endif %}
+            {% if family_budgets.near_limit_count > 0 %}
+            <span class="badge bg-warning text-dark">{{ family_budgets.near_limit_count }} near limit</span>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Budgets List -->
+        <div class="family-budgets-list">
+            {% include "dashboard/partials/family_budgets_list.html" %}
+        </div>
+
+        <!-- Total Footer -->
+        <div class="mt-4 p-3 bg-light rounded">
+            <div class="d-flex justify-content-between align-items-center">
+                <span class="text-muted">Remaining across active budgets</span>
+                <span class="fw-bold fs-5">{{ currency }} {{ "%.3f"|format(family_budgets.total_remaining) }}</span>
+            </div>
+        </div>
+
+        {% endif %}
+    </div>
+</div>

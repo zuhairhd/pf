@@ -1,0 +1,15 @@
+{% if family_budgets.budgets %}
+    {% for budget in family_budgets.budgets %}
+        {% include "dashboard/partials/family_budget_card.html" %}
+    {% endfor %}
+{% else %}
+    <div class="text-center py-4">
+        <i class="bi bi-wallet2 fs-1 text-muted mb-3"></i>
+        {% if family_budgets.permissions and family_budgets.permissions.can_create_budget %}
+            <p class="text-muted">No budgets yet. Create a private, shared, or family budget to start tracking spending.</p>
+            <a href="/family/budgets" class="btn btn-primary btn-sm">Create Budget</a>
+        {% else %}
+            <p class="text-muted">No budgets are visible to you right now.</p>
+        {% endif %}
+    </div>
+{% endif %}

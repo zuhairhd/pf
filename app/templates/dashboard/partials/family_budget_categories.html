@@ -1,0 +1,38 @@
+<div class="budget-categories border-top pt-2 mt-2">
+    {% if categories %}
+    <table class="table table-sm mb-0">
+        <thead>
+            <tr class="text-muted small">
+                <th>Category</th>
+                <th>Account</th>
+                <th class="text-end">Planned</th>
+                <th class="text-end">Actual</th>
+                <th class="text-end">Remaining</th>
+                <th class="text-end">% Used</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for category in categories %}
+            <tr>
+                <td>{{ category.name }}</td>
+                <td class="text-muted">{{ category.account_name or "—" }}</td>
+                <td class="text-end">{{ currency }} {{ "%.3f"|format(category.planned_amount) }}</td>
+                <td class="text-end">{{ currency }} {{ "%.3f"|format(category.actual_amount) }}</td>
+                <td class="text-end">{{ currency }} {{ "%.3f"|format(category.remaining_amount) }}</td>
+                <td class="text-end">{{ category.percent_used }}%</td>
+                <td>
+                    {% if category.is_over_budget %}
+                    <span class="badge bg-danger">Over</span>
+                    {% elif category.is_near_limit %}
+                    <span class="badge bg-warning text-dark">Near limit</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted small mb-0">No categories on this budget yet.</p>
+    {% endif %}
+</div>

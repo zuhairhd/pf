@@ -112,3 +112,52 @@ class ActiveFamilyBudgetsSummary(BaseModel):
     over_budget_count: int
     near_limit_count: int
     currency: str
+
+
+# ---------------------------------------------------------------------------
+# Dashboard widget schemas (DB-1106A)
+# ---------------------------------------------------------------------------
+
+
+class DashboardBudgetCategoryItem(BaseModel):
+    id: int
+    name: str
+    account_name: Optional[str] = None
+    planned_amount: Decimal
+    actual_amount: Decimal
+    remaining_amount: Decimal
+    percent_used: Decimal
+    alert_threshold: Decimal
+    is_over_budget: bool
+    is_near_limit: bool
+
+
+class DashboardBudgetItem(BaseModel):
+    id: int
+    name: str
+    visibility: str
+    status: str
+    period_start: date
+    period_end: date
+    total_planned: Decimal
+    total_actual: Decimal
+    total_remaining: Decimal
+    percent_used: Decimal
+    is_over_budget: bool
+    is_near_limit: bool
+    categories: List[DashboardBudgetCategoryItem]
+    can_view: bool = True
+    can_manage: bool = False
+
+
+class FamilyBudgetsDashboardResponse(BaseModel):
+    budgets: List[DashboardBudgetItem]
+    active_budgets_count: int
+    total_planned: Decimal
+    total_actual: Decimal
+    total_remaining: Decimal
+    average_percent_used: Decimal
+    over_budget_count: int
+    near_limit_count: int
+    currency: str
+    permissions: dict

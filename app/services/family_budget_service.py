@@ -56,6 +56,10 @@ class FamilyBudgetService:
     async def _get_role(self) -> FamilyRole:
         return await self.access.get_role()
 
+    async def get_role(self) -> FamilyRole:
+        """Public accessor for the current user's family role."""
+        return await self._get_role()
+
     def _is_elevated(self, role: FamilyRole) -> bool:
         return role in (FamilyRole.HEAD, FamilyRole.PARENT)
 
@@ -115,6 +119,11 @@ class FamilyBudgetService:
         if role == FamilyRole.TEEN:
             return visibility == BudgetVisibility.PRIVATE.value
         return False
+
+    async def can_create_budget(self, visibility: str = BudgetVisibility.PRIVATE.value) -> bool:
+        """Whether the current user may create a budget with the given visibility."""
+        role = await self._get_role()
+        return self._can_create(role, visibility)
 
     async def require_view(self, budget: Budget) -> None:
         if not await self.can_user_view_budget(budget):

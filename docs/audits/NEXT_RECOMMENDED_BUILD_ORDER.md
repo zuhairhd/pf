@@ -10,9 +10,9 @@
 
 ## Executive Summary
 
-Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), AI-1222 (AI Confidence Scoring), AI-1223 (Dashboard v2), and FAM-1303 (Family Budgets) are **COMPLETE**. The database has 44 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and the dashboard is now the AI-centric "Today" landing page — surfacing health score, proactive alerts, confidence-aware recommendations, and optimizer shortcuts alongside the existing commitments, family-goals, and (as of FAM-1303) permission-aware family budgets, all strictly read-only.
+Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), AI-1222 (AI Confidence Scoring), AI-1223 (Dashboard v2), FAM-1303 (Family Budgets), and DB-1106A (Family Budget Dashboard Widget UI) are **COMPLETE**. The database has 44 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and the dashboard is now the AI-centric "Today" landing page — surfacing health score, proactive alerts, confidence-aware recommendations, optimizer shortcuts, commitments, family goals, and permission-aware family budgets (with live planned/actual/remaining/percent-used and over-budget/near-limit badges), all strictly read-only.
 
-The next card should be **DB-1106A — Family Budget Dashboard Widget UI**, surfacing the FAM-1303 budget summary on the dashboard.
+The next card should be **FAM-1304 — Allowance and Chore Tracking**, continuing the Family Finance epic in `PLAN_V2.md`.
 
 ---
 
@@ -799,15 +799,38 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 33
+
+### Card 33: DB-1106A — Family Budget Dashboard Widget UI ✅ DONE
+
+**PLAN_V2 Reference:** DB-1106A (informal dashboard-widget follow-up, matching DB-1104A/DB-1105A)  
+**Type:** Feature / Dashboard  
+**Priority:** HIGH
+
+**Completed:**
+- Added `GET /dashboard/api/family-budgets`, `GET /dashboard/partials/family-budgets`, `POST /dashboard/partials/family-budgets/{id}/archive`, `GET /dashboard/partials/family-budgets/{id}/categories`.
+- New widget templates integrated into `dashboard/index.html` alongside AI Today, commitments, and family-goals — none removed.
+- Reused `FamilyBudgetService.list_visible_budgets_for_user()`/`calculate_budget_summary()` unchanged; budget actuals computed fresh, never persisted, during render.
+- Verified permission filtering (head/parent/adult/teen/child/viewer), no private-account-name leakage through shared budget categories, and tenant/RLS isolation.
+- No schema changes; 19 new tests; full suite **470 passed, 1 skipped**.
+
+**Remaining:**
+- Category editing stays on the full `/family/budgets` page.
+- No unarchive quick action in the widget.
+
+**Test results:** 470 passed, 1 skipped
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 33: DB-1106A — Family Budget Dashboard Widget UI
+### Card 34: FAM-1304 — Allowance and Chore Tracking
 
-**Decision:** FAM-1303 built `FamilyBudgetService.get_active_family_budgets_summary()` specifically for dashboard consumption but intentionally did not wire any UI (per its own scope limits). The natural next step is surfacing that summary on the AI-1223 dashboard alongside the existing commitments and family-goals widgets, completing the same "widget on the dashboard" pattern already used twice before (DB-1104A, DB-1105A).
+**Decision:** With family budgets now modeled, permissioned, and visible on the dashboard (FAM-1303 + DB-1106A), the next item in the Family Finance epic per `PLAN_V2.md` is allowance and chore tracking for children — extending the same family-role permission system (HEAD/PARENT/ADULT/TEEN/CHILD/VIEWER) already built across FAM-1300 through DB-1106A.
 
-**What to tell the coding agent for DB-1106A:**
+**What to tell the coding agent for FAM-1304:**
 
-> "Implement DB-1106A: Family Budget Dashboard Widget UI. Add a budgets widget to the dashboard (app/routers/dashboard.py, app/templates/dashboard/) using FamilyBudgetService.get_active_family_budgets_summary() and calculate_budget_summary(), following the same pattern as the existing commitments_widget.html and family_goals_widget.html (HTMX partial + refresh route). Show active budget count, over-budget/near-limit counts, and a link into /family/budgets. Keep the dashboard read-only, respect budget visibility/RLS, and add tests."
+> "Implement FAM-1304: Allowance and Chore Tracking. Add Allowance (amount, frequency, child) and Chore (description, value, assigned_to, completed, parent-approval) models scoped to the existing Family/FamilyMember structure, with role-based permissions (parents/heads assign and approve, children complete). Do not automate real money transfers via journal entries in this card unless trivial and explicitly read-only-safe — prefer tracking allowance as a ledger-free running total first. Keep RLS safety, do not modify unrelated financial records, and add tests."
 
 ---
 

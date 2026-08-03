@@ -19,11 +19,18 @@ from app.models.family import FamilyRole
 from app.models.database import get_db
 from app.models import Organization, Account, JournalEntry, JournalLine, Goal, Loan, Budget, AIReport
 from app.notifications import NotificationDeliveryService
+from app.models.budget import BudgetStatus
 from app.schemas.bill_subscription import BillResponse, SubscriptionResponse, CommitmentSummary
+from app.schemas.budget import (
+    DashboardBudgetCategoryItem,
+    DashboardBudgetItem,
+    FamilyBudgetsDashboardResponse,
+)
 from app.schemas.dashboard import DashboardToday
 from app.schemas.goal import FamilyGoalsDashboardResponse, DashboardFamilyGoalItem, GoalContributionCreate
 from app.services.bill_subscription_service import BillService, CommitmentService, SubscriptionService
 from app.services.dashboard_ai_service import DashboardAIService
+from app.services.family_budget_service import FamilyBudgetService, FamilyBudgetServiceError
 from app.services.family_goal_service import FamilyGoalService, FamilyGoalServiceError
 from app.services.health_score_service import HealthScoreService
 from app.services.ai_orchestrator import AIOrchestrator
@@ -158,6 +165,11 @@ async def dashboard(
     family_goals = await _build_family_goals_dashboard(db, user)
 
     try:
+        family_budgets = await _build_family_budgets_dashboard(db, user)
+    except Exception:
+        family_budgets = None
+
+    try:
         ai_service = DashboardAIService(db, tenant_id, user)
         ai_today = await ai_service.build_today()
     except Exception:
@@ -173,6 +185,7 @@ async def dashboard(
             "currency": settings.CURRENCY_DEFAULT,
             "commitments": commitments,
             "family_goals": family_goals,
+            "family_budgets": family_budgets,
             "ai_today": ai_today,
             "today": date.today().isoformat(),
             "is_admin": _is_admin(user),
@@ -546,5 +559,207 @@ async def family_goals_cancel_partial(
             "family_goals": family_goals,
             "currency": settings.CURRENCY_DEFAULT,
             "today": date.today().isoformat(),
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Family Budgets Dashboard Widget (DB-1106A)
+# ---------------------------------------------------------------------------
+
+
+async def _build_family_budgets_dashboard(db: AsyncSession, user: User) -> dict:
+    """Load budgets visible to the user and compute a read-only dashboard summary.
+
+    Reuses FamilyBudgetService's permission checks and budget-vs-actual
+    calculation; never creates/updates/deletes financial records or budget
+    actual fields while rendering.
+    """
+    service = FamilyBudgetService(db, tenant_id=user.organization_id, user=user)
+    visible_budgets = await service.list_visible_budgets_for_user()
+
+    budget_items: list[DashboardBudgetItem] = []
+    total_planned = Decimal("0")
+    total_actual = Decimal("0")
+    over_budget_count = 0
+    near_limit_count = 0
+    active_count = 0
+    percent_used_values: list[Decimal] = []
+
+    for budget in visible_budgets:
+        summary = await service.calculate_budget_summary(budget.id)
+        is_over = bool(summary["over_budget_category_ids"])
+        is_near = bool(summary["near_limit_category_ids"]) and not is_over
+
+        categories = [
+            DashboardBudgetCategoryItem(
+                id=c["id"],
+                name=c["name"],
+                account_name=c["account_name"],
+                planned_amount=c["budgeted_amount"],
+                actual_amount=c["actual_amount"],
+                remaining_amount=c["remaining_amount"],
+                percent_used=c["percent_used"],
+                alert_threshold=c["alert_threshold"],
+                is_over_budget=c["is_over_budget"],
+                is_near_limit=c["is_near_limit"],
+            )
+            for c in summary["categories"]
+        ]
+
+        budget_items.append(
+            DashboardBudgetItem(
+                id=budget.id,
+                name=budget.name,
+                visibility=budget.visibility,
+                status=budget.status,
+                period_start=budget.start_date,
+                period_end=budget.end_date,
+                total_planned=summary["total_planned"],
+                total_actual=summary["total_actual"],
+                total_remaining=summary["total_remaining"],
+                percent_used=summary["percent_used"],
+                is_over_budget=is_over,
+                is_near_limit=is_near,
+                categories=categories,
+                can_view=True,
+                can_manage=await service.can_user_manage_budget(budget),
+            )
+        )
+
+        if budget.status == BudgetStatus.ACTIVE.value:
+            active_count += 1
+            total_planned += summary["total_planned"]
+            total_actual += summary["total_actual"]
+            percent_used_values.append(summary["percent_used"])
+            if is_over:
+                over_budget_count += 1
+            elif is_near:
+                near_limit_count += 1
+
+    average_percent_used = (
+        (sum(percent_used_values) / len(percent_used_values)).quantize(Decimal("0.01"))
+        if percent_used_values
+        else Decimal("0")
+    )
+
+    return {
+        "budgets": budget_items,
+        "active_budgets_count": active_count,
+        "total_planned": total_planned,
+        "total_actual": total_actual,
+        "total_remaining": total_planned - total_actual,
+        "average_percent_used": average_percent_used,
+        "over_budget_count": over_budget_count,
+        "near_limit_count": near_limit_count,
+        "currency": settings.CURRENCY_DEFAULT,
+        "permissions": {
+            "can_create_budget": await service.can_create_budget(),
+        },
+    }
+
+
+@router.get("/api/family-budgets", response_model=FamilyBudgetsDashboardResponse)
+async def dashboard_family_budgets_api(
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Return UI-ready JSON for the family budgets dashboard widget."""
+    data = await _build_family_budgets_dashboard(db, user)
+    return FamilyBudgetsDashboardResponse(**data)
+
+
+@router.get("/partials/family-budgets", response_class=HTMLResponse)
+async def family_budgets_partial(
+    request: Request,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """HTMX partial for the family budgets dashboard widget."""
+    try:
+        family_budgets = await _build_family_budgets_dashboard(db, user)
+    except Exception:
+        family_budgets = None
+
+    return templates.TemplateResponse(
+        request,
+        "dashboard/partials/family_budgets_widget.html",
+        {
+            "family_budgets": family_budgets,
+            "currency": settings.CURRENCY_DEFAULT,
+        },
+    )
+
+
+@router.post("/partials/family-budgets/{budget_id}/archive", response_class=HTMLResponse)
+async def family_budgets_archive_partial(
+    request: Request,
+    budget_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Archive a budget from the dashboard widget (permission-checked; status only)."""
+    service = FamilyBudgetService(db, tenant_id=user.organization_id, user=user)
+    action_error = None
+    try:
+        await service.archive_budget(budget_id)
+    except FamilyBudgetServiceError as exc:
+        action_error = exc.message
+
+    try:
+        family_budgets = await _build_family_budgets_dashboard(db, user)
+    except Exception:
+        family_budgets = None
+
+    return templates.TemplateResponse(
+        request,
+        "dashboard/partials/family_budgets_widget.html",
+        {
+            "family_budgets": family_budgets,
+            "currency": settings.CURRENCY_DEFAULT,
+            "action_error": action_error,
+        },
+        status_code=400 if action_error else 200,
+    )
+
+
+@router.get("/partials/family-budgets/{budget_id}/categories", response_class=HTMLResponse)
+async def family_budget_categories_partial(
+    request: Request,
+    budget_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """HTMX partial to expand a single budget's category breakdown, read-only."""
+    service = FamilyBudgetService(db, tenant_id=user.organization_id, user=user)
+    try:
+        summary = await service.calculate_budget_summary(budget_id)
+    except FamilyBudgetServiceError as exc:
+        status_code = 404 if "not found" in exc.message.lower() else 403
+        raise HTTPException(status_code=status_code, detail=exc.message)
+
+    categories = [
+        DashboardBudgetCategoryItem(
+            id=c["id"],
+            name=c["name"],
+            account_name=c["account_name"],
+            planned_amount=c["budgeted_amount"],
+            actual_amount=c["actual_amount"],
+            remaining_amount=c["remaining_amount"],
+            percent_used=c["percent_used"],
+            alert_threshold=c["alert_threshold"],
+            is_over_budget=c["is_over_budget"],
+            is_near_limit=c["is_near_limit"],
+        )
+        for c in summary["categories"]
+    ]
+
+    return templates.TemplateResponse(
+        request,
+        "dashboard/partials/family_budget_categories.html",
+        {
+            "budget_id": budget_id,
+            "categories": categories,
+            "currency": summary["currency"],
         },
     )

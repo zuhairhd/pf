@@ -89,7 +89,7 @@
 | SUB-900 to SUB-901 | Subscriptions | **Done** (`app/routers/subscriptions.py`, CRUD, mark-paid payment posting through `AccountingService`, payment reversal support, pause/cancel/activate, renewals, equivalent amounts, tests) |
 | ACC-503A | Journal Entry Reversal Support | **Done** (`AccountingService.reverse_journal_entry`, reversal metadata, bill/subscription reversal integration, tests) |
 | BDG-1000 to BDG-1003 | Budgets | **Done** for FAM-1303 family budgets (visibility, permissions, categories, budget-vs-actual); legacy simple `/budgets` router fixed and delegates to the safe service |
-| DB-1100 to DB-1105 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI and DB-1105A family goals widget UI; Partial for remaining dashboard widgets |
+| DB-1100 to DB-1105 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI, DB-1105A family goals widget UI, and DB-1106A family budgets widget UI; Partial for remaining dashboard widgets |
 | AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client, AI-1214 What-If Simulator, AI-1211 Debt Optimizer, AI-1212 Savings Optimizer, AI-1213 Goal Planner, AI-1219 Proactive Alerts, AI-1220 AI Chat Interface, AI-1221 AI Memory System, AI-1222 AI Confidence Scoring, and AI-1223 Dashboard v2; Partial/Missing for AI-1215 Recommendation Engine, AI-1216/1217/1218 Daily/Weekly/Monthly Review Generation (not built as standalone cards) |
 | FAM-1300 | Family Finance Foundation | **Done** |
 | FAM-1301 | Family Account Visibility and Shared/Private Data Rules | **Done** |
@@ -435,9 +435,33 @@
 
 ---
 
+## Completed Card 33
+
+### Card 33: DB-1106A — Family Budget Dashboard Widget UI ✅ DONE
+
+**PLAN_V2 Reference:** DB-1106A (informal follow-up to FAM-1303, matching the DB-1104A/DB-1105A widget pattern)  
+**Type:** Feature / Dashboard  
+**Priority:** HIGH
+
+**Completed:**
+- Added a Family Budgets widget to the AI-centric dashboard: `GET /dashboard/api/family-budgets` (JSON), `GET /dashboard/partials/family-budgets` (HTMX widget), `POST /dashboard/partials/family-budgets/{id}/archive` (permission-checked quick action), `GET /dashboard/partials/family-budgets/{id}/categories` (read-only expandable breakdown).
+- New templates: `family_budgets_widget.html`, `family_budgets_list.html`, `family_budget_card.html`, `family_budget_categories.html`; integrated into `dashboard/index.html` alongside the existing AI Today brief, commitments, and family-goals widgets (none removed).
+- Reused `FamilyBudgetService.list_visible_budgets_for_user()` / `calculate_budget_summary()` unchanged — no new budget calculation logic; added only two small public helpers (`get_role()`, `can_create_budget()`).
+- Verified budget-vs-actual is computed fresh and never persisted during dashboard render, and that an inaccessible private account's name is never leaked through a shared budget's category display.
+- No schema changes; no Alembic migration.
+- Added 19 integration tests; full suite **470 passed, 1 skipped**.
+
+**Remaining:**
+- Category creation/editing still lives on the full `/family/budgets` page (dashboard links there rather than embedding editing).
+- No unarchive quick action in the widget.
+
+**Test results:** 470 passed, 1 skipped
+
+---
+
 ## Latest Completed Card
 
-**FAM-1303 - Family Budgets** is complete. Tenants and families can now create private, shared, or family-wide budgets with role-based permissions matching the existing account/goal visibility model, link budget categories to expense accounts (with the same private-account protections used elsewhere), and view read-only budget-vs-actual summaries computed from posted journal entries. Tenant isolation and RLS remain enforced and the full test suite passes.
+**DB-1106A - Family Budget Dashboard Widget UI** is complete. The dashboard now shows every family budget the current user is permitted to see — with planned/actual/remaining totals, percent-used progress bars, and over-budget/near-limit badges — alongside the existing commitments and family-goals widgets. The widget is strictly read-only (budget actuals are computed fresh, never persisted, by viewing it), respects the full FAM-1303 permission matrix, and never leaks a private account's name through a shared budget. Tenant isolation and RLS remain enforced and the full test suite passes.
 
 ---
 
