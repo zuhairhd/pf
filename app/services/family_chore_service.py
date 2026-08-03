@@ -452,6 +452,69 @@ class FamilyChoreService:
         }
 
     # -----------------------------------------------------------------------
+    # Dashboard-facing helpers (DB-1107A)
+    # -----------------------------------------------------------------------
+
+    async def list_pending_completions_for_user(self) -> list[FamilyChoreCompletion]:
+        """Return submitted (pending-approval) completions visible to the current user.
+
+        HEAD/PARENT see every pending completion in the family (for
+        approval). Everyone else sees only their own pending submissions
+        (so they can see "awaiting approval" status on what they submitted).
+        """
+        role = await self.get_role()
+        family = await self._get_family()
+        if family is None:
+            return []
+
+        query = (
+            select(FamilyChoreCompletion)
+            .where(FamilyChoreCompletion.tenant_id == self.tenant_id)
+            .where(FamilyChoreCompletion.family_id == family.id)
+            .where(FamilyChoreCompletion.status == ChoreCompletionStatus.SUBMITTED.value)
+        )
+        if not self._is_elevated(role):
+            own_member = await self._get_own_member()
+            if own_member is None:
+                return []
+            query = query.where(FamilyChoreCompletion.completed_by_member_id == own_member.id)
+
+        result = await self.db.execute(query.order_by(FamilyChoreCompletion.completed_at.desc()))
+        return list(result.scalars().all())
+
+    async def get_approved_allowance_this_month(self) -> Decimal:
+        """Sum of earned_amount for completions approved in the current calendar month.
+
+        Scoped the same way as get_allowance_summary(): HEAD/PARENT see the
+        whole family; everyone else sees only their own completions. This
+        is a read-only aggregate — nothing is written or posted.
+        """
+        role = await self.get_role()
+        family = await self._get_family()
+        if family is None:
+            return Decimal("0")
+
+        today = date.today()
+        month_start = datetime(today.year, today.month, 1)
+
+        query = (
+            select(FamilyChoreCompletion)
+            .where(FamilyChoreCompletion.tenant_id == self.tenant_id)
+            .where(FamilyChoreCompletion.family_id == family.id)
+            .where(FamilyChoreCompletion.status == ChoreCompletionStatus.APPROVED.value)
+            .where(FamilyChoreCompletion.approved_at >= month_start)
+        )
+        if not self._is_elevated(role):
+            own_member = await self._get_own_member()
+            if own_member is None:
+                return Decimal("0")
+            query = query.where(FamilyChoreCompletion.completed_by_member_id == own_member.id)
+
+        result = await self.db.execute(query)
+        completions = list(result.scalars().all())
+        return sum((c.earned_amount for c in completions), Decimal("0"))
+
+    # -----------------------------------------------------------------------
     # Dashboard-facing summary (follow-up: DB-1107A Allowance/Chore Dashboard Widget)
     # -----------------------------------------------------------------------
 

@@ -1,0 +1,16 @@
+{% set all_chores = family_chores.overdue_chores + family_chores.assigned_chores %}
+{% if all_chores %}
+    {% for chore in all_chores %}
+        {% include "dashboard/partials/family_chore_card.html" %}
+    {% endfor %}
+{% else %}
+    <div class="text-center py-4">
+        <i class="bi bi-check2-square fs-1 text-muted mb-3"></i>
+        {% if family_chores.permissions and family_chores.permissions.can_manage_chores %}
+            <p class="text-muted">No chores due soon or overdue. Assign a chore to start tracking allowance.</p>
+            <a href="/family/chores" class="btn btn-primary btn-sm">Assign Chore</a>
+        {% else %}
+            <p class="text-muted">No chores due soon or overdue right now.</p>
+        {% endif %}
+    </div>
+{% endif %}

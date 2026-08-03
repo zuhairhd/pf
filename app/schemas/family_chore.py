@@ -95,3 +95,67 @@ class AllowanceSummaryResponse(BaseModel):
     approved_earned_amount: Decimal
     rejected_amount: Decimal
     by_member: List[AllowanceMemberBreakdown]
+
+
+# ---------------------------------------------------------------------------
+# Dashboard widget schemas (DB-1107A)
+# ---------------------------------------------------------------------------
+
+
+class DashboardChoreItem(BaseModel):
+    id: int
+    title: str
+    assigned_to_member_id: Optional[int] = None
+    assigned_to_name: Optional[str] = None
+    allowance_amount: Decimal
+    currency: str
+    frequency: str
+    due_date: Optional[date] = None
+    status: str
+    is_overdue: bool
+    is_due_soon: bool
+    can_submit: bool = False
+    can_manage: bool = False
+
+
+class DashboardCompletionItem(BaseModel):
+    id: int
+    chore_id: int
+    chore_title: str
+    completed_by_member_id: int
+    completed_by_name: Optional[str] = None
+    submitted_notes: Optional[str] = None
+    status: str
+    earned_amount: Decimal
+    completed_at: datetime
+    can_approve: bool = False
+    can_reject: bool = False
+
+
+class DashboardAllowanceMemberBreakdown(BaseModel):
+    member_id: int
+    member_name: str
+    pending_approval_amount: Decimal
+    approved_earned_amount: Decimal
+    rejected_amount: Decimal
+
+
+class DashboardAllowanceSummary(BaseModel):
+    currency: str
+    pending_approval_amount: Decimal
+    approved_earned_amount: Decimal
+    approved_this_month_amount: Decimal
+    rejected_amount: Decimal
+    by_member: List[DashboardAllowanceMemberBreakdown]
+
+
+class FamilyChoresDashboardResponse(BaseModel):
+    assigned_chores: List[DashboardChoreItem]
+    overdue_chores: List[DashboardChoreItem]
+    pending_approvals: List[DashboardCompletionItem]
+    allowance_summary: DashboardAllowanceSummary
+    due_soon_count: int
+    overdue_count: int
+    pending_approvals_count: int
+    currency: str
+    permissions: dict

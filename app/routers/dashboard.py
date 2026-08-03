@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse
@@ -15,11 +15,12 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.core.security import get_db_with_tenant_context, require_tenant_member, require_tenant_admin
 from app.models import User, UserRole
-from app.models.family import FamilyRole
+from app.models.family import FamilyRole, FamilyMember
 from app.models.database import get_db
 from app.models import Organization, Account, JournalEntry, JournalLine, Goal, Loan, Budget, AIReport
 from app.notifications import NotificationDeliveryService
 from app.models.budget import BudgetStatus
+from app.models.family_chore import ChoreStatus
 from app.schemas.bill_subscription import BillResponse, SubscriptionResponse, CommitmentSummary
 from app.schemas.budget import (
     DashboardBudgetCategoryItem,
@@ -28,9 +29,18 @@ from app.schemas.budget import (
 )
 from app.schemas.dashboard import DashboardToday
 from app.schemas.goal import FamilyGoalsDashboardResponse, DashboardFamilyGoalItem, GoalContributionCreate
+from app.schemas.family_chore import (
+    ChoreCompletionCreate,
+    DashboardAllowanceMemberBreakdown,
+    DashboardAllowanceSummary,
+    DashboardChoreItem,
+    DashboardCompletionItem,
+    FamilyChoresDashboardResponse,
+)
 from app.services.bill_subscription_service import BillService, CommitmentService, SubscriptionService
 from app.services.dashboard_ai_service import DashboardAIService
 from app.services.family_budget_service import FamilyBudgetService, FamilyBudgetServiceError
+from app.services.family_chore_service import FamilyChoreService, FamilyChoreServiceError
 from app.services.family_goal_service import FamilyGoalService, FamilyGoalServiceError
 from app.services.health_score_service import HealthScoreService
 from app.services.ai_orchestrator import AIOrchestrator
@@ -170,6 +180,11 @@ async def dashboard(
         family_budgets = None
 
     try:
+        family_chores = await _build_family_chores_dashboard(db, user)
+    except Exception:
+        family_chores = None
+
+    try:
         ai_service = DashboardAIService(db, tenant_id, user)
         ai_today = await ai_service.build_today()
     except Exception:
@@ -186,6 +201,7 @@ async def dashboard(
             "commitments": commitments,
             "family_goals": family_goals,
             "family_budgets": family_budgets,
+            "family_chores": family_chores,
             "ai_today": ai_today,
             "today": date.today().isoformat(),
             "is_admin": _is_admin(user),
@@ -762,4 +778,223 @@ async def family_budget_categories_partial(
             "categories": categories,
             "currency": summary["currency"],
         },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Family chores & allowance dashboard widget (DB-1107A)
+# ---------------------------------------------------------------------------
+
+
+async def _build_family_chores_dashboard(db: AsyncSession, user: User) -> dict:
+    """Load chores/completions visible to the user and compute a read-only summary.
+
+    Reuses FamilyChoreService's permission checks and allowance
+    calculations; never creates/updates completion records or posts
+    allowance while rendering. Due-soon/overdue bucketing is view-only
+    categorization of chores the service already scoped by role.
+    """
+    service = FamilyChoreService(db, tenant_id=user.organization_id, user=user)
+    chores = await service.list_visible_chores_for_user()
+    pending_completions = await service.list_pending_completions_for_user()
+    allowance_summary = await service.get_allowance_summary()
+    approved_this_month = await service.get_approved_allowance_this_month()
+
+    today = date.today()
+    due_soon_cutoff = date.fromordinal(today.toordinal() + 7)
+
+    member_ids = {c.assigned_to_member_id for c in chores if c.assigned_to_member_id is not None}
+    member_ids.update(c.completed_by_member_id for c in pending_completions)
+    members_by_id: dict[int, FamilyMember] = {}
+    if member_ids:
+        result = await db.execute(select(FamilyMember).where(FamilyMember.id.in_(member_ids)))
+        members_by_id = {m.id: m for m in result.scalars().all()}
+
+    def _member_name(member_id: Optional[int]) -> Optional[str]:
+        member = members_by_id.get(member_id) if member_id is not None else None
+        return f"{member.first_name} {member.last_name}".strip() if member else None
+
+    chore_titles_by_id = {c.id: c.title for c in chores}
+
+    assigned_items: list[DashboardChoreItem] = []
+    overdue_items: list[DashboardChoreItem] = []
+    active_chores = [c for c in chores if c.status == ChoreStatus.ACTIVE.value]
+
+    for chore in active_chores:
+        is_overdue = chore.due_date is not None and chore.due_date < today
+        is_due_soon = chore.due_date is not None and today <= chore.due_date <= due_soon_cutoff
+        if not (is_overdue or is_due_soon):
+            continue
+
+        item = DashboardChoreItem(
+            id=chore.id,
+            title=chore.title,
+            assigned_to_member_id=chore.assigned_to_member_id,
+            assigned_to_name=_member_name(chore.assigned_to_member_id),
+            allowance_amount=chore.allowance_amount,
+            currency=chore.currency,
+            frequency=chore.frequency,
+            due_date=chore.due_date,
+            status=chore.status,
+            is_overdue=is_overdue,
+            is_due_soon=is_due_soon,
+            can_submit=await service.can_user_submit_completion(chore),
+            can_manage=await service.can_user_manage_chore(chore),
+        )
+        if is_overdue:
+            overdue_items.append(item)
+        else:
+            assigned_items.append(item)
+
+    can_approve = await service.can_user_approve_completion()
+    pending_items = [
+        DashboardCompletionItem(
+            id=completion.id,
+            chore_id=completion.chore_id,
+            chore_title=chore_titles_by_id.get(completion.chore_id, "Unknown chore"),
+            completed_by_member_id=completion.completed_by_member_id,
+            completed_by_name=_member_name(completion.completed_by_member_id),
+            submitted_notes=completion.submitted_notes,
+            status=completion.status,
+            earned_amount=completion.earned_amount,
+            completed_at=completion.completed_at,
+            can_approve=can_approve,
+            can_reject=can_approve,
+        )
+        for completion in pending_completions
+    ]
+
+    by_member = [
+        DashboardAllowanceMemberBreakdown(**member_summary)
+        for member_summary in allowance_summary["by_member"]
+    ]
+
+    return {
+        "assigned_chores": assigned_items,
+        "overdue_chores": overdue_items,
+        "pending_approvals": pending_items,
+        "allowance_summary": DashboardAllowanceSummary(
+            currency=allowance_summary["currency"],
+            pending_approval_amount=allowance_summary["pending_approval_amount"],
+            approved_earned_amount=allowance_summary["approved_earned_amount"],
+            approved_this_month_amount=approved_this_month,
+            rejected_amount=allowance_summary["rejected_amount"],
+            by_member=by_member,
+        ),
+        "due_soon_count": len(assigned_items),
+        "overdue_count": len(overdue_items),
+        "pending_approvals_count": len(pending_items),
+        "currency": allowance_summary["currency"],
+        "permissions": {
+            "can_manage_chores": await service.can_user_manage_chore(),
+            "can_approve_completions": can_approve,
+        },
+    }
+
+
+@router.get("/api/family-chores", response_model=FamilyChoresDashboardResponse)
+async def dashboard_family_chores_api(
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Return UI-ready JSON for the family chores & allowance dashboard widget."""
+    data = await _build_family_chores_dashboard(db, user)
+    return FamilyChoresDashboardResponse(**data)
+
+
+@router.get("/partials/family-chores", response_class=HTMLResponse)
+async def family_chores_partial(
+    request: Request,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """HTMX partial for the family chores & allowance dashboard widget."""
+    try:
+        family_chores = await _build_family_chores_dashboard(db, user)
+    except Exception:
+        family_chores = None
+
+    return templates.TemplateResponse(
+        request,
+        "dashboard/partials/family_chores_widget.html",
+        {
+            "family_chores": family_chores,
+            "currency": settings.CURRENCY_DEFAULT,
+        },
+    )
+
+
+@router.post("/partials/family-chores/{chore_id}/complete", response_class=HTMLResponse)
+async def family_chores_complete_partial(
+    request: Request,
+    chore_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Submit a chore completion from the dashboard widget (permission-checked).
+
+    Creates only a FamilyChoreCompletion record (status=submitted, earned
+    amount 0 until approved) — never a transaction, journal entry, or
+    account balance change.
+    """
+    service = FamilyChoreService(db, tenant_id=user.organization_id, user=user)
+    action_error = None
+    try:
+        await service.submit_completion(chore_id, ChoreCompletionCreate())
+    except FamilyChoreServiceError as exc:
+        action_error = exc.message
+
+    try:
+        family_chores = await _build_family_chores_dashboard(db, user)
+    except Exception:
+        family_chores = None
+
+    return templates.TemplateResponse(
+        request,
+        "dashboard/partials/family_chores_widget.html",
+        {
+            "family_chores": family_chores,
+            "currency": settings.CURRENCY_DEFAULT,
+            "action_error": action_error,
+        },
+        status_code=400 if action_error else 200,
+    )
+
+
+@router.post("/partials/family-chore-completions/{completion_id}/approve", response_class=HTMLResponse)
+async def family_chore_completions_approve_partial(
+    request: Request,
+    completion_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Approve a chore completion from the dashboard widget (HEAD/PARENT only).
+
+    Sets the completion's earned_amount to the chore's allowance amount;
+    never creates a transaction, journal entry, or posts to any account.
+    Reject is intentionally not offered here since it requires a reason —
+    use the full chore completions view to reject (see implementation
+    report "Known Limitations").
+    """
+    service = FamilyChoreService(db, tenant_id=user.organization_id, user=user)
+    action_error = None
+    try:
+        await service.approve_completion(completion_id)
+    except FamilyChoreServiceError as exc:
+        action_error = exc.message
+
+    try:
+        family_chores = await _build_family_chores_dashboard(db, user)
+    except Exception:
+        family_chores = None
+
+    return templates.TemplateResponse(
+        request,
+        "dashboard/partials/family_chores_widget.html",
+        {
+            "family_chores": family_chores,
+            "currency": settings.CURRENCY_DEFAULT,
+            "action_error": action_error,
+        },
+        status_code=400 if action_error else 200,
     )

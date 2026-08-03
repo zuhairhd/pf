@@ -1,0 +1,48 @@
+<h6 class="text-muted mb-2">Allowance Summary</h6>
+<div class="row g-2 mb-3">
+    <div class="col-sm-4">
+        <div class="p-2 bg-light rounded text-center">
+            <p class="text-muted mb-1 small">Pending</p>
+            <span class="fw-bold">{{ family_chores.currency }} {{ "%.3f"|format(family_chores.allowance_summary.pending_approval_amount) }}</span>
+        </div>
+    </div>
+    <div class="col-sm-4">
+        <div class="p-2 bg-light rounded text-center">
+            <p class="text-muted mb-1 small">Approved (all time)</p>
+            <span class="fw-bold text-success">{{ family_chores.currency }} {{ "%.3f"|format(family_chores.allowance_summary.approved_earned_amount) }}</span>
+        </div>
+    </div>
+    <div class="col-sm-4">
+        <div class="p-2 bg-light rounded text-center">
+            <p class="text-muted mb-1 small">Rejected</p>
+            <span class="fw-bold text-muted">{{ family_chores.currency }} {{ "%.3f"|format(family_chores.allowance_summary.rejected_amount) }}</span>
+        </div>
+    </div>
+</div>
+
+{% if family_chores.allowance_summary.by_member %}
+<div class="table-responsive">
+    <table class="table table-sm mb-0">
+        <thead>
+            <tr>
+                <th>Member</th>
+                <th class="text-end">Pending</th>
+                <th class="text-end">Approved</th>
+                <th class="text-end">Rejected</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for member in family_chores.allowance_summary.by_member %}
+            <tr>
+                <td>{{ member.member_name }}</td>
+                <td class="text-end">{{ family_chores.currency }} {{ "%.3f"|format(member.pending_approval_amount) }}</td>
+                <td class="text-end">{{ family_chores.currency }} {{ "%.3f"|format(member.approved_earned_amount) }}</td>
+                <td class="text-end">{{ family_chores.currency }} {{ "%.3f"|format(member.rejected_amount) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<p class="text-muted mb-0 small">No allowance activity yet.</p>
+{% endif %}

@@ -89,7 +89,7 @@
 | SUB-900 to SUB-901 | Subscriptions | **Done** (`app/routers/subscriptions.py`, CRUD, mark-paid payment posting through `AccountingService`, payment reversal support, pause/cancel/activate, renewals, equivalent amounts, tests) |
 | ACC-503A | Journal Entry Reversal Support | **Done** (`AccountingService.reverse_journal_entry`, reversal metadata, bill/subscription reversal integration, tests) |
 | BDG-1000 to BDG-1003 | Budgets | **Done** for FAM-1303 family budgets (visibility, permissions, categories, budget-vs-actual); legacy simple `/budgets` router fixed and delegates to the safe service |
-| DB-1100 to DB-1105 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI, DB-1105A family goals widget UI, and DB-1106A family budgets widget UI; Partial for remaining dashboard widgets |
+| DB-1100 to DB-1107 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI, DB-1105A family goals widget UI, DB-1106A family budgets widget UI, and DB-1107A allowance/chore widget UI; Partial for remaining dashboard widgets |
 | AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client, AI-1214 What-If Simulator, AI-1211 Debt Optimizer, AI-1212 Savings Optimizer, AI-1213 Goal Planner, AI-1219 Proactive Alerts, AI-1220 AI Chat Interface, AI-1221 AI Memory System, AI-1222 AI Confidence Scoring, and AI-1223 Dashboard v2; Partial/Missing for AI-1215 Recommendation Engine, AI-1216/1217/1218 Daily/Weekly/Monthly Review Generation (not built as standalone cards) |
 | FAM-1300 | Family Finance Foundation | **Done** |
 | FAM-1301 | Family Account Visibility and Shared/Private Data Rules | **Done** |
@@ -97,6 +97,7 @@
 | FAM-1300 to FAM-1302 | Family Finance foundation, account visibility, family goals | **Done** | Family/goal models, visibility rules, dashboard widget, and goal contribution accounting posting are complete | Allowance/chore tracking still deferred | Continue with FAM-1304 or DB-1106A |
 | FAM-1303 | Family Budgets | **Done** (visibility/permissions, categories, budget-vs-actual, 26 tests) |
 | FAM-1304 | Allowance and Chore Tracking | **Done** (chores, completions, approval workflow, role-scoped allowance summary, 29 tests) |
+| DB-1107A | Allowance and Chore Dashboard Widget UI | **Done** (dashboard widget, submit/approve HTMX quick actions, role-scoped visibility, 25 tests) |
 | FAM-1305 | Family Dashboard | Partial |
 | GOAL-1400 to GOAL-1402 | Goals | **Done** for GOAL-1401A goal-contribution accounting posting; Partial for remaining goal planning/reversal |
 | LOAN-1500 to LOAN-1505 | Loans | Partial (models, routes, service exist) |
@@ -485,9 +486,34 @@
 
 ---
 
+## Completed Card 35
+
+### Card 35: DB-1107A — Allowance and Chore Dashboard Widget UI ✅ DONE
+
+**PLAN_V2 Reference:** DB-1107A (informal follow-up to FAM-1304, matching the DB-1104A/DB-1105A/DB-1106A widget pattern)
+**Type:** Feature / Dashboard
+**Priority:** HIGH
+
+**Completed:**
+- Added a Chores & Allowance widget to the AI-centric dashboard: `GET /dashboard/api/family-chores` (JSON), `GET /dashboard/partials/family-chores` (HTMX widget), `POST /dashboard/partials/family-chores/{chore_id}/complete` (submit-completion quick action), `POST /dashboard/partials/family-chore-completions/{completion_id}/approve` (approve quick action).
+- New templates: `family_chores_widget.html`, `family_chores_list.html`, `family_chore_card.html`, `family_chore_pending_approvals.html`, `family_allowance_summary.html`; integrated into `dashboard/index.html` alongside the existing AI Today brief, commitments, family-goals, and family-budgets widgets (none removed).
+- Reused `FamilyChoreService.list_visible_chores_for_user()` and `get_allowance_summary()` unchanged; added two small read-only helper methods to the service (`list_pending_completions_for_user()`, `get_approved_allowance_this_month()`) — no chore/allowance calculation logic duplicated in the router. Due-soon/overdue bucketing is view-only categorization of chores the service already scoped by role.
+- Verified role-based visibility (HEAD/PARENT see all chores + approvals + full summary; TEEN/CHILD see only their own assigned chores and completions; VIEWER sees no action buttons), and that submit/approve quick actions are permission-checked server-side (not just hidden in the UI).
+- Reject is intentionally not offered as a dashboard quick action (it requires a reason); the widget links to `/family/chores` instead, matching the existing "View" link precedent from the family-budgets widget's `family_budget_card.html`.
+- No schema changes; no Alembic migration (Alembic head unchanged at `356391296d35`).
+- Added 25 integration tests; full suite **524 passed, 1 skipped**.
+
+**Remaining:**
+- Reject quick action not on the dashboard (documented limitation above).
+- No accounting posting for approved allowance (documented follow-up: FAM-1305 — Allowance Payment Posting Through Accounting Engine).
+
+**Test results:** 524 passed, 1 skipped
+
+---
+
 ## Latest Completed Card
 
-**FAM-1304 - Allowance and Chore Tracking** is complete. Heads and parents can define chores, optionally assign them to a family member with an allowance amount, and approve or reject submitted completions; a read-only allowance summary aggregates pending/approved/rejected totals per member, scoped to what each role is allowed to see. No payments, transactions, or journal entries are created — allowance amounts are tracked numerically only. Tenant isolation and RLS remain enforced (both new tables carry RLS + FORCE RLS from creation) and the full test suite passes.
+**DB-1107A - Allowance and Chore Dashboard Widget UI** is complete. The dashboard now shows assigned/overdue chores, pending completions awaiting approval, and a role-scoped allowance summary (pending/approved-this-month/approved-all-time/rejected, with a per-member breakdown where the viewer is allowed to see it), alongside permission-gated submit-completion and approve-completion HTMX quick actions. Every existing dashboard section (AI Today, commitments, family goals, family budgets, optimizer shortcuts) is preserved. The widget is strictly read-only with respect to accounts, transactions, journal entries, and goals — only explicit chore actions create or update `FamilyChoreCompletion` rows. Tenant isolation and RLS remain enforced and the full test suite passes.
 
 ---
 

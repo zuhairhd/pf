@@ -1,0 +1,41 @@
+<div class="chore-card mb-3 p-3 border rounded bg-light">
+    <div class="d-flex justify-content-between align-items-start mb-2 flex-wrap gap-2">
+        <div>
+            <h6 class="mb-1">{{ chore.title }}</h6>
+            {% if chore.is_overdue %}
+            <span class="badge bg-danger">Overdue</span>
+            {% elif chore.is_due_soon %}
+            <span class="badge bg-warning text-dark">Due soon</span>
+            {% endif %}
+            <span class="badge bg-secondary">{{ chore.frequency }}</span>
+            {% if chore.assigned_to_name %}
+            <small class="text-muted ms-2">Assigned to {{ chore.assigned_to_name }}</small>
+            {% else %}
+            <small class="text-muted ms-2">Unassigned</small>
+            {% endif %}
+            {% if chore.due_date %}
+            <small class="text-muted ms-2">Due {{ chore.due_date }}</small>
+            {% endif %}
+        </div>
+        <div class="text-end">
+            <small class="text-muted">{{ chore.currency }} {{ "%.3f"|format(chore.allowance_amount) }}</small>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-end align-items-center flex-wrap gap-2">
+        <div class="d-flex gap-2">
+            <a href="/family/chores" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-eye"></i> View
+            </a>
+            {% if chore.can_submit %}
+            <button class="btn btn-sm btn-outline-success"
+                    hx-post="/dashboard/partials/family-chores/{{ chore.id }}/complete"
+                    hx-target="#family-chores-widget"
+                    hx-swap="outerHTML"
+                    hx-confirm="Mark this chore as complete? It will be sent for approval.">
+                <i class="bi bi-check-lg"></i> Mark Complete
+            </button>
+            {% endif %}
+        </div>
+    </div>
+</div>

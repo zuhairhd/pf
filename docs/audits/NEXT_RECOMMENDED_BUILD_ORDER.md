@@ -10,9 +10,9 @@
 
 ## Executive Summary
 
-Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), AI-1222 (AI Confidence Scoring), AI-1223 (Dashboard v2), FAM-1303 (Family Budgets), DB-1106A (Family Budget Dashboard Widget UI), and FAM-1304 (Allowance and Chore Tracking) are **COMPLETE**. The database has 46 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and the dashboard is the AI-centric "Today" landing page — surfacing health score, proactive alerts, confidence-aware recommendations, optimizer shortcuts, commitments, family goals, and permission-aware family budgets, all strictly read-only. Families can now also define chores, assign them to members with an allowance amount, and track completion/approval — with no payments or journal entries created anywhere.
+Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), AI-1222 (AI Confidence Scoring), AI-1223 (Dashboard v2), FAM-1303 (Family Budgets), DB-1106A (Family Budget Dashboard Widget UI), FAM-1304 (Allowance and Chore Tracking), and DB-1107A (Allowance and Chore Dashboard Widget UI) are **COMPLETE**. The database has 46 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and the dashboard is the AI-centric "Today" landing page — surfacing health score, proactive alerts, confidence-aware recommendations, optimizer shortcuts, commitments, family goals, permission-aware family budgets, and now permission-aware chores/allowance, all strictly read-only. Families can define chores, assign them to members with an allowance amount, track completion/approval, and see due-soon/overdue chores plus a role-scoped allowance summary right on the dashboard — with no payments or journal entries created anywhere.
 
-The next card should be **DB-1107A — Allowance and Chore Dashboard Widget UI**, surfacing the FAM-1304 chore/allowance summary on the dashboard.
+The next card should be **FAM-1305 — Allowance Payment Posting Through Accounting Engine**, turning an approved chore completion's earned amount into an actual posted transaction.
 
 ---
 
@@ -846,15 +846,38 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 35
+
+### Card 35: DB-1107A — Allowance and Chore Dashboard Widget UI ✅ DONE
+
+**PLAN_V2 Reference:** DB-1107A (informal dashboard-widget follow-up, matching DB-1104A/DB-1105A/DB-1106A)
+**Type:** Feature / Dashboard
+**Priority:** HIGH
+
+**Completed:**
+- Added `GET /dashboard/api/family-chores`, `GET /dashboard/partials/family-chores`, `POST /dashboard/partials/family-chores/{chore_id}/complete`, `POST /dashboard/partials/family-chore-completions/{completion_id}/approve`.
+- New widget templates (`family_chores_widget.html`, `family_chores_list.html`, `family_chore_card.html`, `family_chore_pending_approvals.html`, `family_allowance_summary.html`) integrated into `dashboard/index.html` alongside AI Today, commitments, family-goals, and family-budgets — none removed.
+- Reused `FamilyChoreService.list_visible_chores_for_user()` / `get_allowance_summary()` unchanged; added two small read-only helpers (`list_pending_completions_for_user()`, `get_approved_allowance_this_month()`) — no chore/allowance math duplicated in the router.
+- Verified permission filtering (head/parent/teen/child/viewer), submit/approve quick actions are permission-checked and reject-free by design (documented limitation), and tenant/RLS isolation.
+- No schema changes; 25 new tests; full suite **524 passed, 1 skipped**.
+
+**Remaining:**
+- Reject quick action is not on the dashboard (requires a reason); links to `/family/chores` instead, matching the existing "View" link precedent from the family-budgets widget.
+- No accounting posting for approved allowance (FAM-1305 follow-up).
+
+**Test results:** 524 passed, 1 skipped
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 35: DB-1107A — Allowance and Chore Dashboard Widget UI
+### Card 36: FAM-1305 — Allowance Payment Posting Through Accounting Engine
 
-**Decision:** `FamilyChoreService.get_family_chore_summary()` already exists specifically for this purpose (due-soon count, overdue count, pending-approvals count, approved-allowance amount). Surfacing it on the dashboard alongside the existing commitments, family-goals, and family-budgets widgets is the lowest-risk, most immediately valuable next step, following the same "service now, widget next" rhythm as FAM-1303 → DB-1106A.
+**Decision:** DB-1107A completes the dashboard-widget trilogy for family finance (goals, budgets, chores/allowance) — every FAM-13xx feature now has both an API and a dashboard surface, and all four widgets are strictly read-only. The one deliberately deferred piece across FAM-1304 and DB-1107A is turning an *approved* chore completion's `earned_amount` into an actual posted transaction (crediting the child's allowance/cash account). That's the next concrete, well-scoped piece of family-finance work, and it's explicitly called out as a follow-up in both the FAM-1304 and DB-1107A implementation reports.
 
-**What to tell the coding agent for DB-1107A:**
+**What to tell the coding agent for FAM-1305:**
 
-> "Implement DB-1107A: Allowance and Chore Dashboard Widget UI. Add a chores/allowance widget to the dashboard (app/routers/dashboard.py, app/templates/dashboard/) using FamilyChoreService.get_family_chore_summary() and get_allowance_summary(), following the same pattern as the existing commitments_widget.html, family_goals_widget.html, and family_budgets_widget.html (HTMX partial + refresh route). Show due-soon/overdue chore counts, pending-approvals count (role-gated), and approved allowance this scope, with a link into /family/chores. Keep the dashboard read-only, respect chore visibility/RLS, and add tests."
+> "Implement FAM-1305: Allowance Payment Posting Through Accounting Engine. When a HEAD/PARENT approves a chore completion (FamilyChoreService.approve_completion), optionally post a real transaction crediting the assigned member's designated allowance/cash account and debiting a family 'Allowance Expense' account, using the existing JournalEntry/JournalLine posting pattern (see app/services for the transaction posting helper used by /transactions/). Make posting explicit and permission-gated (not automatic on every approval, unless the family/member has a linked account) — do not silently create financial records for members without an account. Respect RLS and multi-tenant isolation. Add tests covering: successful posting, no account linked (no crash, clear message), double-posting prevention on re-approval, and full regression."
 
 ---
 

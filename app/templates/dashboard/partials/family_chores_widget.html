@@ -1,0 +1,90 @@
+<div id="family-chores-widget" class="family-chores-widget">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h6 class="mb-0">
+            <i class="bi bi-check2-square text-primary me-2"></i>
+            Chores &amp; Allowance
+        </h6>
+        <div class="d-flex gap-2 align-items-center">
+            {% if family_chores and family_chores.permissions and family_chores.permissions.can_manage_chores %}
+            <a href="/family/chores" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-plus-lg me-1"></i> Manage Chores
+            </a>
+            {% endif %}
+            <button
+                class="btn btn-sm btn-outline-secondary"
+                hx-get="/dashboard/partials/family-chores"
+                hx-target="#family-chores-widget"
+                hx-swap="outerHTML"
+            >
+                <i class="bi bi-arrow-clockwise"></i>
+            </button>
+        </div>
+    </div>
+
+    <div class="card-body">
+        {% if action_error %}
+        <div class="alert alert-warning py-2 mb-3" role="alert">
+            {{ action_error }}
+        </div>
+        {% endif %}
+
+        {% if family_chores is none %}
+        <div class="text-center py-4">
+            <i class="bi bi-exclamation-triangle fs-1 text-muted mb-3"></i>
+            <p class="text-muted mb-0">Chores are temporarily unavailable. Your data is safe and unchanged.</p>
+        </div>
+        {% else %}
+
+        <!-- Summary Row -->
+        <div class="row g-3 mb-4">
+            <div class="col-sm-6 col-lg-3">
+                <div class="stat-card stat-card-sm">
+                    <p class="card-label text-muted mb-1">Due Soon</p>
+                    <h5 class="card-value mb-0">{{ family_chores.due_soon_count }}</h5>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <div class="stat-card stat-card-sm">
+                    <p class="card-label text-muted mb-1">Overdue</p>
+                    <h5 class="card-value mb-0">{{ family_chores.overdue_count }}</h5>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <div class="stat-card stat-card-sm">
+                    <p class="card-label text-muted mb-1">Pending Approval</p>
+                    <h5 class="card-value mb-0">{{ family_chores.pending_approvals_count }}</h5>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <div class="stat-card stat-card-sm">
+                    <p class="card-label text-muted mb-1">Earned This Month</p>
+                    <h5 class="card-value mb-0">{{ currency }} {{ "%.3f"|format(family_chores.allowance_summary.approved_this_month_amount) }}</h5>
+                </div>
+            </div>
+        </div>
+
+        {% if family_chores.overdue_count > 0 %}
+        <div class="d-flex gap-2 mb-3">
+            <span class="badge bg-danger">{{ family_chores.overdue_count }} overdue</span>
+        </div>
+        {% endif %}
+
+        <!-- Assigned & Overdue Chores List -->
+        <div class="family-chores-list">
+            {% include "dashboard/partials/family_chores_list.html" %}
+        </div>
+
+        <!-- Pending Approvals -->
+        <div class="mt-4">
+            <h6 class="text-muted mb-2">Pending Approvals</h6>
+            {% include "dashboard/partials/family_chore_pending_approvals.html" %}
+        </div>
+
+        <!-- Allowance Summary -->
+        <div class="mt-4">
+            {% include "dashboard/partials/family_allowance_summary.html" %}
+        </div>
+
+        {% endif %}
+    </div>
+</div>

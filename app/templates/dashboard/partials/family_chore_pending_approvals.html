@@ -1,0 +1,39 @@
+{% if family_chores.pending_approvals %}
+    {% for completion in family_chores.pending_approvals %}
+    <div class="pending-approval-card mb-2 p-3 border rounded">
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+            <div>
+                <strong>{{ completion.chore_title }}</strong>
+                {% if completion.completed_by_name %}
+                <small class="text-muted ms-2">by {{ completion.completed_by_name }}</small>
+                {% endif %}
+                <br>
+                <small class="text-muted">Submitted {{ completion.completed_at }}</small>
+                {% if completion.submitted_notes %}
+                <br><small class="text-muted fst-italic">"{{ completion.submitted_notes }}"</small>
+                {% endif %}
+            </div>
+            <div class="d-flex gap-2">
+                {% if completion.can_approve %}
+                <button class="btn btn-sm btn-success"
+                        hx-post="/dashboard/partials/family-chore-completions/{{ completion.id }}/approve"
+                        hx-target="#family-chores-widget"
+                        hx-swap="outerHTML"
+                        hx-confirm="Approve this chore completion?">
+                    <i class="bi bi-check-lg"></i> Approve
+                </button>
+                {% endif %}
+                {% if completion.can_reject %}
+                <a href="/family/chores" class="btn btn-sm btn-outline-danger">
+                    <i class="bi bi-x-lg"></i> Reject
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+{% else %}
+    <div class="text-center py-3">
+        <p class="text-muted mb-0 small">No completions awaiting approval.</p>
+    </div>
+{% endif %}
