@@ -869,6 +869,12 @@ async def _build_family_chores_dashboard(db: AsyncSession, user: User) -> dict:
         for member_summary in allowance_summary["by_member"]
     ]
 
+    can_post_payment = await service.can_user_post_payment()
+    # "Ready to pay" is a count-only signal (approved, unpaid, earned > 0);
+    # the dashboard never selects payment/expense accounts on its own, so
+    # this only ever links to the full chores page (DB-1107B follow-up).
+    ready_to_pay_count = await service.count_approved_unpaid_completions()
+
     return {
         "assigned_chores": assigned_items,
         "overdue_chores": overdue_items,
@@ -878,16 +884,21 @@ async def _build_family_chores_dashboard(db: AsyncSession, user: User) -> dict:
             pending_approval_amount=allowance_summary["pending_approval_amount"],
             approved_earned_amount=allowance_summary["approved_earned_amount"],
             approved_this_month_amount=approved_this_month,
+            approved_unpaid_amount=allowance_summary["approved_unpaid_amount"],
+            paid_amount=allowance_summary["paid_amount"],
+            reversed_amount=allowance_summary["reversed_amount"],
             rejected_amount=allowance_summary["rejected_amount"],
             by_member=by_member,
         ),
         "due_soon_count": len(assigned_items),
         "overdue_count": len(overdue_items),
         "pending_approvals_count": len(pending_items),
+        "ready_to_pay_count": ready_to_pay_count,
         "currency": allowance_summary["currency"],
         "permissions": {
             "can_manage_chores": await service.can_user_manage_chore(),
             "can_approve_completions": can_approve,
+            "can_post_payment": can_post_payment,
         },
     }
 

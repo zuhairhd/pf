@@ -63,9 +63,16 @@
             </div>
         </div>
 
-        {% if family_chores.overdue_count > 0 %}
-        <div class="d-flex gap-2 mb-3">
+        {% if family_chores.overdue_count > 0 or (family_chores.permissions.can_post_payment and family_chores.ready_to_pay_count > 0) %}
+        <div class="d-flex gap-2 mb-3 flex-wrap">
+            {% if family_chores.overdue_count > 0 %}
             <span class="badge bg-danger">{{ family_chores.overdue_count }} overdue</span>
+            {% endif %}
+            {% if family_chores.permissions.can_post_payment and family_chores.ready_to_pay_count > 0 %}
+            <a href="/family/chores" class="badge bg-success text-decoration-none">
+                <i class="bi bi-cash-coin"></i> {{ family_chores.ready_to_pay_count }} ready to pay
+            </a>
+            {% endif %}
         </div>
         {% endif %}
 

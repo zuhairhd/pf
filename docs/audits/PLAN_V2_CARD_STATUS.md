@@ -98,7 +98,7 @@
 | FAM-1303 | Family Budgets | **Done** (visibility/permissions, categories, budget-vs-actual, 26 tests) |
 | FAM-1304 | Allowance and Chore Tracking | **Done** (chores, completions, approval workflow, role-scoped allowance summary, 29 tests) |
 | DB-1107A | Allowance and Chore Dashboard Widget UI | **Done** (dashboard widget, submit/approve HTMX quick actions, role-scoped visibility, 25 tests) |
-| FAM-1305 | Family Dashboard | Partial |
+| FAM-1305 | Allowance Payment Posting Through Accounting Engine | **Done** (balanced journal entry posting via AccountingService, idempotent, safely reversible via ACC-503A, HEAD/PARENT-only, 30 tests) |
 | GOAL-1400 to GOAL-1402 | Goals | **Done** for GOAL-1401A goal-contribution accounting posting; Partial for remaining goal planning/reversal |
 | LOAN-1500 to LOAN-1505 | Loans | Partial (models, routes, service exist) |
 | NOTIF-1600 to NOTIF-1604 | Notifications | **Done** for NOTIF-1600 (email backend, reminder generation, CRUD/preferences routes, tests); Partial for remaining notification channels |
@@ -511,9 +511,37 @@
 
 ---
 
+## Completed Card 36
+
+### Card 36: FAM-1305 — Allowance Payment Posting Through Accounting Engine ✅ DONE
+
+**PLAN_V2 Reference:** FAM-1305 (Allowance Payment Posting), following the FAM-1304 → DB-1107A → FAM-1305 "track, surface, post" sequence
+**Type:** Feature / Accounting
+**Priority:** MEDIUM
+
+**Completed:**
+- Added `payment_status`, `payment_account_id`, `expense_account_id`, `payment_journal_entry_id`, `payment_reversal_journal_entry_id`, `paid_at`, `paid_by_user_id` to `FamilyChoreCompletion` (migration `bd89e4fcf4b9`, nullable/defaulted, no data loss, RLS untouched).
+- `FamilyChoreService.post_payment()` posts an approved completion's `earned_amount` as a balanced journal entry (debit Expense, credit Asset) through `AccountingService.create_journal_entry()` — never a direct insert. Reference `ALLOW-{tenant_id}-{completion_id}`; idempotent on `payment_journal_entry_id`.
+- `FamilyChoreService.reverse_payment()` reverses a posted payment through the existing `AccountingService.reverse_journal_entry()` (ACC-503A) — idempotent, never deletes/mutates the original entry.
+- HEAD/PARENT-only permission gate (`can_user_post_payment()`), separate from the assigned-member's ability to submit a completion.
+- Account validation: tenant-scoped lookup (cross-tenant → 404), Asset/Expense type checks, `FamilyAccountAccessService.can_use_account_for_posting()`.
+- `GET /family/allowance-summary` gained `approved_unpaid_amount`, `paid_amount`, `reversed_amount` (overall and per-member), without changing any existing field's meaning.
+- Added `POST /family/chore-completions/{id}/post-payment` and `POST /family/chore-completions/{id}/reverse-payment`.
+- Dashboard widget gained a "ready to pay" count/badge (HEAD/PARENT only) — no account-selecting payment form was added to the dashboard (documented follow-up: DB-1107B).
+- Added 30 integration tests; full suite **554 passed, 1 skipped**.
+
+**Remaining:**
+- No dashboard-embedded payment form (documented follow-up: DB-1107B — Allowance Payment Dashboard Action Form).
+- "Reject inaccessible private account" is structurally unreachable for the only permitted posting role (HEAD/PARENT already has full account access per FAM-1301) — documented as a known limitation rather than a gap.
+- No partial or batch payment posting.
+
+**Test results:** 554 passed, 1 skipped
+
+---
+
 ## Latest Completed Card
 
-**DB-1107A - Allowance and Chore Dashboard Widget UI** is complete. The dashboard now shows assigned/overdue chores, pending completions awaiting approval, and a role-scoped allowance summary (pending/approved-this-month/approved-all-time/rejected, with a per-member breakdown where the viewer is allowed to see it), alongside permission-gated submit-completion and approve-completion HTMX quick actions. Every existing dashboard section (AI Today, commitments, family goals, family budgets, optimizer shortcuts) is preserved. The widget is strictly read-only with respect to accounts, transactions, journal entries, and goals — only explicit chore actions create or update `FamilyChoreCompletion` rows. Tenant isolation and RLS remain enforced and the full test suite passes.
+**FAM-1305 - Allowance Payment Posting Through Accounting Engine** is complete. An approved chore completion's earned allowance can now be posted as a real, balanced journal entry (debit expense, credit asset/payment account) through the existing accounting engine, and safely reversed through the existing reversal engine — both HEAD/PARENT-only, idempotent, and fully tenant/RLS-isolated. The allowance summary and dashboard widget now distinguish pending, approved-unpaid, paid, and reversed amounts. Chore completion records are preserved exactly as before; nothing bypasses `AccountingService`, no journal entry is ever deleted or mutated, and the full test suite passes.
 
 ---
 

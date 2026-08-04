@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.security import get_db_with_tenant_context, require_tenant_member
-from app.models import User, Account
+from app.models import User, Account, JournalEntry
 from app.schemas.family import (
     FamilyCreate,
     FamilyResponse,
@@ -43,6 +43,9 @@ from app.schemas.family_chore import (
     ChoreCompletionCreate,
     ChoreCompletionResponse,
     ChoreCreate,
+    ChorePaymentPostRequest,
+    ChorePaymentPostResponse,
+    ChorePaymentReverseResponse,
     ChoreResponse,
     ChoreUpdate,
 )
@@ -794,6 +797,13 @@ def _to_completion_response(completion) -> ChoreCompletionResponse:
         approved_at=completion.approved_at,
         rejection_reason=completion.rejection_reason,
         earned_amount=completion.earned_amount,
+        payment_status=completion.payment_status,
+        payment_account_id=completion.payment_account_id,
+        expense_account_id=completion.expense_account_id,
+        payment_journal_entry_id=completion.payment_journal_entry_id,
+        payment_reversal_journal_entry_id=completion.payment_reversal_journal_entry_id,
+        paid_at=completion.paid_at,
+        paid_by_user_id=completion.paid_by_user_id,
         created_at=completion.created_at,
         updated_at=completion.updated_at,
     )
@@ -934,6 +944,82 @@ async def reject_family_chore_completion(
     except FamilyChoreServiceError as exc:
         raise HTTPException(status_code=_chore_error_status(exc.message), detail=exc.message)
     return _to_completion_response(completion)
+
+
+@router.post("/chore-completions/{completion_id}/post-payment", response_model=ChorePaymentPostResponse)
+async def post_family_chore_payment(
+    completion_id: int,
+    payload: ChorePaymentPostRequest,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Post an approved allowance completion as a balanced journal entry.
+
+    Requires HEAD or PARENT. Idempotent: calling this again after the
+    completion is already paid returns the existing payment, without
+    creating a duplicate journal entry.
+    """
+    service = _chore_service(db, user)
+    try:
+        completion = await service.post_payment(
+            completion_id,
+            payment_account_id=payload.payment_account_id,
+            expense_account_id=payload.expense_account_id,
+            payment_date=payload.payment_date,
+            notes=payload.notes,
+        )
+    except FamilyChoreServiceError as exc:
+        raise HTTPException(status_code=_chore_error_status(exc.message), detail=exc.message)
+    chore = await service._get_chore_raw(completion.chore_id)
+    return ChorePaymentPostResponse(
+        completion_id=completion.id,
+        payment_status=completion.payment_status,
+        paid_at=completion.paid_at,
+        payment_journal_entry_id=completion.payment_journal_entry_id,
+        debit_account_id=completion.expense_account_id,
+        credit_account_id=completion.payment_account_id,
+        amount=completion.earned_amount,
+        currency=chore.currency if chore is not None else "OMR",
+    )
+
+
+@router.post("/chore-completions/{completion_id}/reverse-payment", response_model=ChorePaymentReverseResponse)
+async def reverse_family_chore_payment(
+    completion_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Reverse a posted allowance payment through the accounting engine.
+
+    Requires HEAD or PARENT. Idempotent: calling this again after the
+    payment is already reversed returns the existing reversal, without
+    creating a duplicate reversing journal entry. The original payment
+    journal entry is never deleted or mutated.
+    """
+    service = _chore_service(db, user)
+    try:
+        completion = await service.reverse_payment(completion_id)
+    except FamilyChoreServiceError as exc:
+        raise HTTPException(status_code=_chore_error_status(exc.message), detail=exc.message)
+
+    reversed_at = None
+    if completion.payment_journal_entry_id:
+        original = await db.execute(
+            select(JournalEntry).where(
+                JournalEntry.id == completion.payment_journal_entry_id,
+                JournalEntry.tenant_id == user.organization_id,
+            )
+        )
+        original_entry = original.scalar_one_or_none()
+        reversed_at = original_entry.reversed_at if original_entry is not None else None
+
+    return ChorePaymentReverseResponse(
+        completion_id=completion.id,
+        payment_status=completion.payment_status,
+        payment_journal_entry_id=completion.payment_journal_entry_id,
+        payment_reversal_journal_entry_id=completion.payment_reversal_journal_entry_id,
+        reversed_at=reversed_at,
+    )
 
 
 @router.get("/allowance-summary", response_model=AllowanceSummaryResponse)

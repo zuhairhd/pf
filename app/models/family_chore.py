@@ -1,11 +1,13 @@
-"""Family chore and allowance tracking models (FAM-1304).
+"""Family chore and allowance tracking models (FAM-1304, FAM-1305).
 
 Chores are tenant/family-scoped tasks that can be assigned to a family
 member with an allowance amount. Completions are submitted by the
-assigned member and approved/rejected by a head or parent. No payment,
-transaction, or journal entry is created here — allowance amounts are
-tracked as plain numeric fields only. Posting earned allowance through
-the accounting engine is deferred to FAM-1305.
+assigned member and approved/rejected by a head or parent. Approved
+completions may optionally be paid — FAM-1305 adds payment-posting
+columns to FamilyChoreCompletion so an approved allowance can be turned
+into a balanced journal entry through AccountingService, with safe
+reversal. Nothing here posts a journal entry directly; that only ever
+happens through FamilyChoreService calling AccountingService.
 """
 
 from datetime import datetime
@@ -41,6 +43,12 @@ class ChoreCompletionStatus(str, enum.Enum):
     SUBMITTED = "submitted"
     APPROVED = "approved"
     REJECTED = "rejected"
+
+
+class ChorePaymentStatus(str, enum.Enum):
+    UNPAID = "unpaid"
+    PAID = "paid"
+    REVERSED = "reversed"
 
 
 class FamilyChore(Base, TimestampMixin, TenantMixin):
@@ -97,13 +105,31 @@ class FamilyChoreCompletion(Base, TimestampMixin, TenantMixin):
 
     earned_amount = Column(Numeric(15, 3), default=Decimal("0"), nullable=False)
 
+    # Payment posting (FAM-1305) — set only through FamilyChoreService calling
+    # AccountingService; never mutated directly elsewhere.
+    payment_status = Column(String(20), default=ChorePaymentStatus.UNPAID.value, nullable=False, index=True)
+    payment_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True, index=True)
+    expense_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True, index=True)
+    payment_journal_entry_id = Column(Integer, ForeignKey("journal_entries.id"), nullable=True, index=True)
+    payment_reversal_journal_entry_id = Column(Integer, ForeignKey("journal_entries.id"), nullable=True, index=True)
+    paid_at = Column(DateTime, nullable=True)
+    paid_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+
     # Relationships
     chore = relationship("FamilyChore", back_populates="completions")
     family = relationship("Family", foreign_keys=[family_id])
     completed_by = relationship("FamilyMember", foreign_keys=[completed_by_member_id])
     approved_by = relationship("User", foreign_keys=[approved_by_user_id])
+    payment_account = relationship("Account", foreign_keys=[payment_account_id])
+    expense_account = relationship("Account", foreign_keys=[expense_account_id])
+    payment_journal_entry = relationship("JournalEntry", foreign_keys=[payment_journal_entry_id])
+    payment_reversal_journal_entry = relationship(
+        "JournalEntry", foreign_keys=[payment_reversal_journal_entry_id]
+    )
+    paid_by = relationship("User", foreign_keys=[paid_by_user_id])
 
     __table_args__ = (
         Index("ix_family_chore_completions_tenant_status", "tenant_id", "status"),
         Index("ix_family_chore_completions_tenant_member", "tenant_id", "completed_by_member_id"),
+        Index("ix_family_chore_completions_tenant_payment_status", "tenant_id", "payment_status"),
     )

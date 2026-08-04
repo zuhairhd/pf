@@ -1,8 +1,11 @@
-"""Family chore and allowance tracking service (FAM-1304).
+"""Family chore and allowance tracking service (FAM-1304, FAM-1305).
 
 Chores are tenant/family-scoped tasks that can be assigned to a family
 member with an allowance amount. Completions are submitted by the
-assigned member and approved/rejected by a head or parent.
+assigned member and approved/rejected by a head or parent. Approved
+completions may optionally be paid: FAM-1305 posts a balanced journal
+entry through AccountingService (debit expense, credit payment/asset
+account) and supports safe reversal through the same engine.
 
 Role resolution is delegated to FamilyAccountAccessService so permissions
 stay consistent with the rest of the family finance module. A tenant does
@@ -10,19 +13,23 @@ not need a Family profile to resolve a role (falls back to tenant
 OWNER/ADMIN -> HEAD, else VIEWER), matching FamilyBudgetService.
 
 Permission summary (see docs/audits/FAM-1304_ALLOWANCE_CHORES_IMPLEMENTATION_REPORT.md
-for the full matrix):
-  - HEAD/PARENT: create/manage/approve everything; view all chores and the
-    full allowance summary.
+and docs/audits/FAM-1305_ALLOWANCE_PAYMENT_POSTING_IMPLEMENTATION_REPORT.md for the
+full matrix):
+  - HEAD/PARENT: create/manage/approve/pay/reverse everything; view all
+    chores and the full allowance summary.
   - ADULT: view all family chores (broad visibility, like shared/family
-    budgets) and their own allowance summary; cannot create, manage, or
-    approve chores (no elevated-permission flag exists yet for chores).
+    budgets) and their own allowance summary; cannot create, manage,
+    approve, or post/reverse payment (no elevated-permission flag exists
+    yet for chores).
   - TEEN/CHILD: view and submit completions only for chores assigned to
-    themselves; cannot create/manage/approve; own allowance summary only.
-  - VIEWER: read-only view of all family chores; cannot submit or approve.
+    themselves; cannot create/manage/approve/pay; own allowance summary
+    only.
+  - VIEWER: read-only view of all family chores; cannot submit, approve,
+    or pay.
 
-This service never creates transactions, journal entries, or modifies
-account balances. Posting earned allowance through the accounting engine
-is deferred to FAM-1305.
+This service never creates transactions or journal entries directly —
+allowance payment posting and reversal always go through
+AccountingService, and never bypass it.
 """
 
 from __future__ import annotations
@@ -34,10 +41,12 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Family, FamilyChore, FamilyChoreCompletion, FamilyMember, User
+from app.models import Account, Family, FamilyChore, FamilyChoreCompletion, FamilyMember, JournalEntry, User
 from app.models.family import FamilyRole
-from app.models.family_chore import ChoreCompletionStatus, ChoreStatus
+from app.models.family_chore import ChoreCompletionStatus, ChorePaymentStatus, ChoreStatus
+from app.schemas.accounting import JournalEntryCreate, JournalLineCreate
 from app.schemas.family_chore import ChoreCompletionCreate, ChoreCreate, ChoreUpdate
+from app.services.accounting_service import AccountingService
 from app.services.family_account_access_service import FamilyAccountAccessService
 
 
@@ -160,6 +169,20 @@ class FamilyChoreService:
     async def require_approve(self) -> None:
         if not await self.can_user_approve_completion():
             raise FamilyChoreServiceError("You do not have permission to approve chore completions")
+
+    async def can_user_post_payment(self) -> bool:
+        """Whether the current user may post or reverse an allowance payment.
+
+        HEAD/PARENT only (tenant OWNER/ADMIN already resolve to HEAD via
+        FamilyAccountAccessService.get_role()). An assigned child/teen can
+        submit a chore completion but can never post its own payment.
+        """
+        role = await self.get_role()
+        return self._is_elevated(role)
+
+    async def require_post_payment(self) -> None:
+        if not await self.can_user_post_payment():
+            raise FamilyChoreServiceError("You do not have permission to post or reverse allowance payments")
 
     # -----------------------------------------------------------------------
     # Chore CRUD
@@ -351,25 +374,194 @@ class FamilyChoreService:
         return completion
 
     # -----------------------------------------------------------------------
-    # Allowance summary (read-only; no accounting posting — see FAM-1305)
+    # Allowance payment posting and reversal (FAM-1305)
     # -----------------------------------------------------------------------
+
+    async def _get_account(self, account_id: int) -> Optional[Account]:
+        """Fetch a tenant-scoped account by ID (cross-tenant IDs resolve to None)."""
+        result = await self.db.execute(
+            select(Account).where(
+                Account.id == account_id,
+                Account.tenant_id == self.tenant_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    def _validate_payment_account(account: Account) -> None:
+        if account.account_type != "Asset":
+            raise FamilyChoreServiceError("Payment account must be an Asset account")
+
+    @staticmethod
+    def _validate_expense_account(account: Account) -> None:
+        if account.account_type != "Expense":
+            raise FamilyChoreServiceError("Expense account must be an Expense account")
+
+    def _payment_reference(self, completion_id: int) -> str:
+        return f"ALLOW-{self.tenant_id}-{completion_id}"
+
+    async def post_payment(
+        self,
+        completion_id: int,
+        payment_account_id: int,
+        expense_account_id: int,
+        payment_date: Optional[date] = None,
+        notes: Optional[str] = None,
+    ) -> FamilyChoreCompletion:
+        """Post an approved allowance as a balanced journal entry.
+
+        Idempotent: if the completion already has a payment_journal_entry_id,
+        it is returned unchanged and no new journal entry is created. Only
+        approved completions with earned_amount > 0 may be paid. Posting
+        always goes through AccountingService — never a direct insert.
+        """
+        completion = await self._get_completion_raw(completion_id)
+        if completion is None:
+            raise FamilyChoreServiceError("Chore completion not found")
+        await self.require_post_payment()
+
+        if completion.payment_journal_entry_id:
+            return completion
+
+        if completion.status != ChoreCompletionStatus.APPROVED.value:
+            raise FamilyChoreServiceError("Only approved completions can be paid")
+        if completion.earned_amount <= 0:
+            raise FamilyChoreServiceError("Nothing to pay: earned amount is zero")
+
+        payment_account = await self._get_account(payment_account_id)
+        if payment_account is None:
+            raise FamilyChoreServiceError("Payment account not found")
+        self._validate_payment_account(payment_account)
+
+        expense_account = await self._get_account(expense_account_id)
+        if expense_account is None:
+            raise FamilyChoreServiceError("Expense account not found")
+        self._validate_expense_account(expense_account)
+
+        if not await self.access.can_use_account_for_posting(payment_account):
+            raise FamilyChoreServiceError("You do not have permission to use the payment account")
+        if not await self.access.can_use_account_for_posting(expense_account):
+            raise FamilyChoreServiceError("You do not have permission to use the expense account")
+
+        chore = await self._get_chore_raw(completion.chore_id)
+        chore_title = chore.title if chore is not None else "chore"
+        effective_date = payment_date or date.today()
+        reference = self._payment_reference(completion.id)
+        narration = f"Allowance payment: {chore_title}"
+
+        # Deterministic-reference idempotency net, in case two requests race
+        # before the completion's payment_journal_entry_id is committed.
+        existing = await self.db.execute(
+            select(JournalEntry).where(
+                JournalEntry.tenant_id == self.tenant_id,
+                JournalEntry.reference == reference,
+            )
+        )
+        existing_entry = existing.scalar_one_or_none()
+        if existing_entry is not None:
+            entry = existing_entry
+        else:
+            accounting = AccountingService(self.db, self.tenant_id)
+            entry = await accounting.create_journal_entry(
+                JournalEntryCreate(
+                    date=effective_date,
+                    narration=narration,
+                    reference=reference,
+                    lines=[
+                        JournalLineCreate(
+                            account_id=expense_account.id,
+                            debit=completion.earned_amount,
+                            credit=Decimal("0"),
+                            description=notes or narration,
+                        ),
+                        JournalLineCreate(
+                            account_id=payment_account.id,
+                            debit=Decimal("0"),
+                            credit=completion.earned_amount,
+                            description=notes or narration,
+                        ),
+                    ],
+                )
+            )
+            entry.source = "allowance_payment"
+            await self.db.commit()
+
+        completion.payment_status = ChorePaymentStatus.PAID.value
+        completion.payment_account_id = payment_account.id
+        completion.expense_account_id = expense_account.id
+        completion.payment_journal_entry_id = entry.id
+        completion.paid_at = datetime.utcnow()
+        completion.paid_by_user_id = self.user.id
+        await self.db.commit()
+        await self.db.refresh(completion)
+        return completion
+
+    async def reverse_payment(self, completion_id: int) -> FamilyChoreCompletion:
+        """Reverse a posted allowance payment through AccountingService.
+
+        Idempotent: if a reversal already exists, it is returned unchanged.
+        The original payment journal entry is never deleted or mutated.
+        """
+        completion = await self._get_completion_raw(completion_id)
+        if completion is None:
+            raise FamilyChoreServiceError("Chore completion not found")
+        await self.require_post_payment()
+
+        if not completion.payment_journal_entry_id:
+            raise FamilyChoreServiceError("This completion has not been paid")
+
+        if completion.payment_reversal_journal_entry_id:
+            return completion
+
+        chore = await self._get_chore_raw(completion.chore_id)
+        chore_title = chore.title if chore is not None else "chore"
+
+        accounting = AccountingService(self.db, self.tenant_id)
+        reversal = await accounting.reverse_journal_entry(
+            completion.payment_journal_entry_id,
+            reason=f"Allowance payment reversed: {chore_title}",
+            created_by=self.user.id,
+        )
+
+        completion.payment_reversal_journal_entry_id = reversal.id
+        completion.payment_status = ChorePaymentStatus.REVERSED.value
+        await self.db.commit()
+        await self.db.refresh(completion)
+        return completion
+
+    # -----------------------------------------------------------------------
+    # Allowance summary (read-only aggregation; posting lives above — FAM-1305)
+    # -----------------------------------------------------------------------
+
+    @staticmethod
+    def _empty_allowance_summary(currency: str) -> dict:
+        return {
+            "currency": currency,
+            "pending_approval_amount": Decimal("0"),
+            "approved_earned_amount": Decimal("0"),
+            "approved_unpaid_amount": Decimal("0"),
+            "paid_amount": Decimal("0"),
+            "reversed_amount": Decimal("0"),
+            "rejected_amount": Decimal("0"),
+            "by_member": [],
+        }
 
     async def get_allowance_summary(self) -> dict:
         """Return a read-only allowance summary scoped to what the user may see.
 
         HEAD/PARENT: summary across all family members.
         Everyone else: summary limited to their own completions only.
+
+        ``approved_earned_amount`` is the total ever approved, regardless of
+        payment status (unchanged from FAM-1304). ``approved_unpaid_amount``,
+        ``paid_amount``, and ``reversed_amount`` (FAM-1305) split that total
+        by payment_status so approved_unpaid + paid + reversed ==
+        approved_earned_amount.
         """
         role = await self.get_role()
         family = await self._get_family()
         if family is None:
-            return {
-                "currency": self.user.currency or "OMR",
-                "pending_approval_amount": Decimal("0"),
-                "approved_earned_amount": Decimal("0"),
-                "rejected_amount": Decimal("0"),
-                "by_member": [],
-            }
+            return self._empty_allowance_summary(self.user.currency or "OMR")
 
         query = (
             select(FamilyChoreCompletion)
@@ -380,13 +572,7 @@ class FamilyChoreService:
         if not self._is_elevated(role):
             own_member = await self._get_own_member()
             if own_member is None:
-                return {
-                    "currency": family.currency,
-                    "pending_approval_amount": Decimal("0"),
-                    "approved_earned_amount": Decimal("0"),
-                    "rejected_amount": Decimal("0"),
-                    "by_member": [],
-                }
+                return self._empty_allowance_summary(family.currency)
             query = query.where(FamilyChoreCompletion.completed_by_member_id == own_member.id)
 
         result = await self.db.execute(query)
@@ -394,6 +580,9 @@ class FamilyChoreService:
 
         pending_total = Decimal("0")
         approved_total = Decimal("0")
+        approved_unpaid_total = Decimal("0")
+        paid_total = Decimal("0")
+        payment_reversed_total = Decimal("0")
         rejected_total = Decimal("0")
         by_member_map: dict[int, dict] = {}
 
@@ -426,6 +615,9 @@ class FamilyChoreService:
                     ),
                     "pending_approval_amount": Decimal("0"),
                     "approved_earned_amount": Decimal("0"),
+                    "approved_unpaid_amount": Decimal("0"),
+                    "paid_amount": Decimal("0"),
+                    "reversed_amount": Decimal("0"),
                     "rejected_amount": Decimal("0"),
                 }
 
@@ -437,6 +629,16 @@ class FamilyChoreService:
             elif completion.status == ChoreCompletionStatus.APPROVED.value:
                 approved_total += completion.earned_amount
                 by_member_map[member_key]["approved_earned_amount"] += completion.earned_amount
+
+                if completion.payment_status == ChorePaymentStatus.PAID.value:
+                    paid_total += completion.earned_amount
+                    by_member_map[member_key]["paid_amount"] += completion.earned_amount
+                elif completion.payment_status == ChorePaymentStatus.REVERSED.value:
+                    payment_reversed_total += completion.earned_amount
+                    by_member_map[member_key]["reversed_amount"] += completion.earned_amount
+                else:
+                    approved_unpaid_total += completion.earned_amount
+                    by_member_map[member_key]["approved_unpaid_amount"] += completion.earned_amount
             elif completion.status == ChoreCompletionStatus.REJECTED.value:
                 chore = chores_by_id.get(completion.chore_id)
                 amount = chore.allowance_amount if chore is not None else Decimal("0")
@@ -447,6 +649,9 @@ class FamilyChoreService:
             "currency": family.currency,
             "pending_approval_amount": pending_total,
             "approved_earned_amount": approved_total,
+            "approved_unpaid_amount": approved_unpaid_total,
+            "paid_amount": paid_total,
+            "reversed_amount": payment_reversed_total,
             "rejected_amount": rejected_total,
             "by_member": list(by_member_map.values()),
         }
@@ -513,6 +718,34 @@ class FamilyChoreService:
         result = await self.db.execute(query)
         completions = list(result.scalars().all())
         return sum((c.earned_amount for c in completions), Decimal("0"))
+
+    async def count_approved_unpaid_completions(self) -> int:
+        """Count approved, unpaid, earned>0 completions visible to the user (FAM-1305).
+
+        Used by the dashboard's "Ready to pay" badge only — never selects
+        payment/expense accounts itself (see DB-1107B follow-up).
+        """
+        role = await self.get_role()
+        family = await self._get_family()
+        if family is None:
+            return 0
+
+        query = (
+            select(FamilyChoreCompletion)
+            .where(FamilyChoreCompletion.tenant_id == self.tenant_id)
+            .where(FamilyChoreCompletion.family_id == family.id)
+            .where(FamilyChoreCompletion.status == ChoreCompletionStatus.APPROVED.value)
+            .where(FamilyChoreCompletion.payment_status == ChorePaymentStatus.UNPAID.value)
+            .where(FamilyChoreCompletion.earned_amount > 0)
+        )
+        if not self._is_elevated(role):
+            own_member = await self._get_own_member()
+            if own_member is None:
+                return 0
+            query = query.where(FamilyChoreCompletion.completed_by_member_id == own_member.id)
+
+        result = await self.db.execute(query)
+        return len(list(result.scalars().all()))
 
     # -----------------------------------------------------------------------
     # Dashboard-facing summary (follow-up: DB-1107A Allowance/Chore Dashboard Widget)

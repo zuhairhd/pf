@@ -66,6 +66,13 @@ class ChoreCompletionResponse(BaseModel):
     approved_at: Optional[datetime] = None
     rejection_reason: Optional[str] = None
     earned_amount: Decimal
+    payment_status: str = "unpaid"
+    payment_account_id: Optional[int] = None
+    expense_account_id: Optional[int] = None
+    payment_journal_entry_id: Optional[int] = None
+    payment_reversal_journal_entry_id: Optional[int] = None
+    paid_at: Optional[datetime] = None
+    paid_by_user_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
@@ -86,6 +93,9 @@ class AllowanceMemberBreakdown(BaseModel):
     member_name: str
     pending_approval_amount: Decimal
     approved_earned_amount: Decimal
+    approved_unpaid_amount: Decimal = Decimal("0")
+    paid_amount: Decimal = Decimal("0")
+    reversed_amount: Decimal = Decimal("0")
     rejected_amount: Decimal
 
 
@@ -93,8 +103,42 @@ class AllowanceSummaryResponse(BaseModel):
     currency: str
     pending_approval_amount: Decimal
     approved_earned_amount: Decimal
+    approved_unpaid_amount: Decimal = Decimal("0")
+    paid_amount: Decimal = Decimal("0")
+    reversed_amount: Decimal = Decimal("0")
     rejected_amount: Decimal
     by_member: List[AllowanceMemberBreakdown]
+
+
+# ---------------------------------------------------------------------------
+# Allowance payment posting schemas (FAM-1305)
+# ---------------------------------------------------------------------------
+
+
+class ChorePaymentPostRequest(BaseModel):
+    payment_account_id: int
+    expense_account_id: int
+    payment_date: Optional[date] = None
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+
+class ChorePaymentPostResponse(BaseModel):
+    completion_id: int
+    payment_status: str
+    paid_at: Optional[datetime] = None
+    payment_journal_entry_id: Optional[int] = None
+    debit_account_id: int
+    credit_account_id: int
+    amount: Decimal
+    currency: str
+
+
+class ChorePaymentReverseResponse(BaseModel):
+    completion_id: int
+    payment_status: str
+    payment_journal_entry_id: Optional[int] = None
+    payment_reversal_journal_entry_id: Optional[int] = None
+    reversed_at: Optional[datetime] = None
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +181,9 @@ class DashboardAllowanceMemberBreakdown(BaseModel):
     member_name: str
     pending_approval_amount: Decimal
     approved_earned_amount: Decimal
+    approved_unpaid_amount: Decimal = Decimal("0")
+    paid_amount: Decimal = Decimal("0")
+    reversed_amount: Decimal = Decimal("0")
     rejected_amount: Decimal
 
 
@@ -145,6 +192,9 @@ class DashboardAllowanceSummary(BaseModel):
     pending_approval_amount: Decimal
     approved_earned_amount: Decimal
     approved_this_month_amount: Decimal
+    approved_unpaid_amount: Decimal = Decimal("0")
+    paid_amount: Decimal = Decimal("0")
+    reversed_amount: Decimal = Decimal("0")
     rejected_amount: Decimal
     by_member: List[DashboardAllowanceMemberBreakdown]
 
@@ -157,5 +207,6 @@ class FamilyChoresDashboardResponse(BaseModel):
     due_soon_count: int
     overdue_count: int
     pending_approvals_count: int
+    ready_to_pay_count: int = 0
     currency: str
     permissions: dict
