@@ -42,6 +42,7 @@ generated/
 exports/
 reports/
 !app/reports/
+!app/templates/reports/
 
 # Alembic / migration temporary files
 *.egg-info/

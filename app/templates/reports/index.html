@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Reports - PF AI{% endblock %}
+{% block page_title %}Reports{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-bar-chart-line text-primary me-2"></i>Report Center</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row g-2 mb-3">
+                        {% for tab in report_tabs %}
+                        <div class="col-sm-6 col-lg-2">
+                            <button
+                                type="button"
+                                class="btn btn-sm w-100 {% if tab.key == active_report %}btn-primary{% else %}btn-outline-secondary{% endif %} report-tab-btn"
+                                hx-get="/reports/partials/{{ tab.key }}"
+                                hx-target="#report-panel"
+                                hx-swap="innerHTML"
+                            >
+                                <i class="bi {{ tab.icon }} me-1"></i> {{ tab.label }}
+                            </button>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    <div id="report-panel">
+                        {% include "reports/partials/income_statement.html" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

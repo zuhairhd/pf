@@ -1,0 +1,28 @@
+{% set is_as_of = active_report in ['balance-sheet', 'net-worth'] %}
+<form
+    class="row g-2 align-items-end mb-3"
+    hx-get="/reports/partials/{{ active_report }}"
+    hx-target="#report-panel"
+    hx-swap="innerHTML"
+>
+    {% if is_as_of %}
+    <div class="col-auto">
+        <label class="form-label small text-muted mb-1">As of date</label>
+        <input type="date" name="as_of_date" class="form-control form-control-sm" value="{{ as_of_date }}">
+    </div>
+    {% else %}
+    <div class="col-auto">
+        <label class="form-label small text-muted mb-1">Start date</label>
+        <input type="date" name="start_date" class="form-control form-control-sm" value="{{ start_date }}">
+    </div>
+    <div class="col-auto">
+        <label class="form-label small text-muted mb-1">End date</label>
+        <input type="date" name="end_date" class="form-control form-control-sm" value="{{ end_date }}">
+    </div>
+    {% endif %}
+    <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-primary">
+            <i class="bi bi-funnel"></i> Apply
+        </button>
+    </div>
+</form>

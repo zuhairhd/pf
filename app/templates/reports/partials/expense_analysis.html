@@ -1,0 +1,66 @@
+{% include "reports/partials/report_filters.html" %}
+
+{% if error %}
+<div class="alert alert-warning py-2 mb-0" role="alert">{{ error }}</div>
+{% elif report is none %}
+<div class="text-center py-4">
+    <i class="bi bi-exclamation-triangle fs-1 text-muted mb-3"></i>
+    <p class="text-muted mb-0">This report is temporarily unavailable. Your data is safe and unchanged.</p>
+</div>
+{% else %}
+
+<div class="row g-3 mb-4">
+    <div class="col-sm-4">
+        <div class="stat-card stat-card-sm">
+            <p class="card-label text-muted mb-1">Total Expenses</p>
+            <h5 class="card-value mb-0 text-danger">{{ report.currency }} {{ "%.3f"|format(report.total_expenses) }}</h5>
+        </div>
+    </div>
+</div>
+
+{% if report.top_expense_accounts %}
+<h6 class="text-muted mb-2">Top Expense Accounts</h6>
+<table class="table table-sm mb-4">
+    <thead>
+        <tr>
+            <th>Account</th>
+            <th class="text-end">Amount</th>
+            <th class="text-end">% of Total</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in report.top_expense_accounts %}
+        <tr>
+            <td>
+                {{ row.account_code }} &mdash; {{ row.account_name }}
+                {% if row.percent_of_total >= 40 %}
+                <span class="badge bg-danger ms-1">High spend</span>
+                {% elif row.percent_of_total >= 20 %}
+                <span class="badge bg-warning text-dark ms-1">Notable</span>
+                {% endif %}
+            </td>
+            <td class="text-end">{{ report.currency }} {{ "%.3f"|format(row.amount) }}</td>
+            <td class="text-end">{{ "%.1f"|format(row.percent_of_total) }}%</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h6 class="text-muted mb-2">All Expense Accounts</h6>
+<table class="table table-sm">
+    <tbody>
+        {% for row in report.expenses_by_account %}
+        <tr>
+            <td>{{ row.account_code }} &mdash; {{ row.account_name }}</td>
+            <td class="text-end">{{ report.currency }} {{ "%.3f"|format(row.amount) }}</td>
+            <td class="text-end">{{ "%.1f"|format(row.percent_of_total) }}%</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+{% set message = "No expense accounts found for this period." %}
+{% include "reports/partials/empty_state.html" %}
+{% endif %}
+
+{% endif %}

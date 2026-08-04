@@ -107,7 +107,7 @@
 | ADMIN-1700 to ADMIN-1704 | Admin | Partial (router exists, limited functionality) |
 | BILLING-1800 to BILLING-1803 | Billing | **Missing** (Stripe fields on model only) |
 | API-1900 to API-1903 | API | **Missing** (no public API) |
-| REP-2000 to REP-2005 | Reports | **Done** for REP-2000 (income statement, balance sheet, cash flow, net worth, expense analysis); Partial for remaining reports |
+| REP-2000 to REP-2005 | Reports | **Done** for REP-2000 (income statement, balance sheet, cash flow, net worth, expense analysis JSON API) and REP-2001 (Report Center UI on top of REP-2000, HTMX partials, date filters); Partial for remaining reports (no PDF/Excel export, no family-level report permissions) |
 | DOC-2100 to DOC-2103 | Documents | **Done** for DOC-2100 and DOC-2101 (upload/storage, OCR engine abstraction, PDF/text OCR, entity linking, tests); Partial for DOC-2102+ |
 | MOB-2200 to MOB-2202 | Mobile/PWA | **Missing** |
 | FEED-2300 to FEED-2303 | Bank Feeds | **Missing** |
@@ -588,9 +588,35 @@
 
 ---
 
+## Completed Card 39
+
+### Card 39: REP-2001 — Financial Reports UI / Report Center ✅ DONE
+
+**PLAN_V2 Reference:** REP-2001 (informal UI follow-up to REP-2000)
+**Type:** Feature / Reports
+**Priority:** MEDIUM
+
+**Completed:**
+- Added `GET /reports` (Report Center page) and `GET /reports/partials/{income-statement,balance-sheet,cash-flow,net-worth,expense-analysis}` — all built on the unchanged `ReportService`/generators from REP-2000; no report calculation logic was duplicated or modified.
+- New templates: `reports/index.html`, `reports/partials/report_filters.html`, `reports/partials/{income_statement,balance_sheet,cash_flow,net_worth,expense_analysis,empty_state}.html`.
+- Date filters default sensibly (current-month period for period reports, today for as-of reports); an invalid range renders a safe inline error instead of a raw 500/exception.
+- HTMX tabs and per-report filter forms refresh only `#report-panel`, matching the project's existing `/dashboard/partials/*` convention exactly.
+- Added a "Reports" sidebar link in `base.html`.
+- Verified strictly read-only (no `JournalEntry`/`Account`/`Budget`/`Goal`/`Notification`/`AIInsight` row is ever created) and full tenant/RLS isolation.
+- No schema changes; no Alembic migration (Alembic head unchanged at `bd89e4fcf4b9`).
+- Added 20 integration tests; full suite **624 passed, 1 skipped**.
+
+**Remaining:**
+- No PDF/Excel export (explicitly out of scope for this card).
+- No family/member-level report permissions (unchanged limitation carried over from REP-2000).
+
+**Test results:** 624 passed, 1 skipped
+
+---
+
 ## Latest Completed Card
 
-**DB-1107C - Allowance Payment Reversal Dashboard Action** is complete. HEAD/PARENT users can now reverse a posted allowance payment directly from the Chores & Allowance dashboard's Recent Payments list, with a single confirmed click — no new reversal logic was written; the action reuses the FAM-1305/ACC-503A reversal engine unchanged. The original payment journal entry is never deleted or mutated; the reversal is idempotent, HEAD/PARENT-only, and fully tenant/RLS-isolated. This completes the full allowance-to-accounting lifecycle (chore → completion → approval → posted payment → reversal) available both via API and dashboard. The full test suite passes.
+**REP-2001 - Financial Reports UI / Report Center** is complete. Users can now view the Income Statement, Balance Sheet, Cash Flow, Net Worth, and Expense Analysis reports directly in the browser — with date filters, empty states, and HTMX-driven tab/filter refreshes — without calling the JSON API manually. Every route is strictly read-only and reuses the REP-2000 `ReportService` unchanged; no report calculation logic was duplicated. Tenant isolation and RLS remain enforced and the full test suite passes.
 
 ---
 

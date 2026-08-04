@@ -1,0 +1,77 @@
+{% include "reports/partials/report_filters.html" %}
+
+{% if error %}
+<div class="alert alert-warning py-2 mb-0" role="alert">{{ error }}</div>
+{% elif report is none %}
+<div class="text-center py-4">
+    <i class="bi bi-exclamation-triangle fs-1 text-muted mb-3"></i>
+    <p class="text-muted mb-0">This report is temporarily unavailable. Your data is safe and unchanged.</p>
+</div>
+{% else %}
+
+<div class="row g-3 mb-4">
+    <div class="col-sm-4">
+        <div class="stat-card stat-card-sm">
+            <p class="card-label text-muted mb-1">Income</p>
+            <h5 class="card-value mb-0 text-success">{{ report.currency }} {{ "%.3f"|format(report.income_total) }}</h5>
+        </div>
+    </div>
+    <div class="col-sm-4">
+        <div class="stat-card stat-card-sm">
+            <p class="card-label text-muted mb-1">Expenses</p>
+            <h5 class="card-value mb-0 text-danger">{{ report.currency }} {{ "%.3f"|format(report.expense_total) }}</h5>
+        </div>
+    </div>
+    <div class="col-sm-4">
+        <div class="stat-card stat-card-sm">
+            <p class="card-label text-muted mb-1">Net Income</p>
+            <h5 class="card-value mb-0 {% if report.net_income >= 0 %}text-success{% else %}text-danger{% endif %}">
+                {{ report.currency }} {{ "%.3f"|format(report.net_income) }}
+            </h5>
+        </div>
+    </div>
+</div>
+
+{% if report.income_accounts or report.expense_accounts %}
+<div class="row g-3">
+    <div class="col-md-6">
+        <h6 class="text-muted mb-2">Income Accounts</h6>
+        {% if report.income_accounts %}
+        <table class="table table-sm">
+            <tbody>
+                {% for row in report.income_accounts %}
+                <tr>
+                    <td>{{ row.account_code }} &mdash; {{ row.account_name }}</td>
+                    <td class="text-end">{{ report.currency }} {{ "%.3f"|format(row.amount) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted small">No income accounts.</p>
+        {% endif %}
+    </div>
+    <div class="col-md-6">
+        <h6 class="text-muted mb-2">Expense Accounts</h6>
+        {% if report.expense_accounts %}
+        <table class="table table-sm">
+            <tbody>
+                {% for row in report.expense_accounts %}
+                <tr>
+                    <td>{{ row.account_code }} &mdash; {{ row.account_name }}</td>
+                    <td class="text-end">{{ report.currency }} {{ "%.3f"|format(row.amount) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted small">No expense accounts.</p>
+        {% endif %}
+    </div>
+</div>
+{% else %}
+{% set message = "No income or expense accounts found for this period." %}
+{% include "reports/partials/empty_state.html" %}
+{% endif %}
+
+{% endif %}

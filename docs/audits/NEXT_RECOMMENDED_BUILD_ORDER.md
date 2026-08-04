@@ -10,9 +10,9 @@
 
 ## Executive Summary
 
-Cards PF-014-DB through REP-2000 (Basic Financial Reports — still pending, see below), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), AI-1222 (AI Confidence Scoring), AI-1223 (Dashboard v2), FAM-1303 (Family Budgets), DB-1106A (Family Budget Dashboard Widget UI), FAM-1304 (Allowance and Chore Tracking), DB-1107A (Allowance and Chore Dashboard Widget UI), FAM-1305 (Allowance Payment Posting Through Accounting Engine), DB-1107B (Allowance Payment Dashboard Action Form), and DB-1107C (Allowance Payment Reversal Dashboard Action) are **COMPLETE**. The database has 46 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and the dashboard is the AI-centric "Today" landing page — surfacing health score, proactive alerts, confidence-aware recommendations, optimizer shortcuts, commitments, family goals, permission-aware family budgets, and permission-aware chores/allowance. The full allowance lifecycle — chore → completion → approval → posted payment → reversal — is now available both via API and directly from the dashboard: HEAD/PARENT can select payment/expense accounts and post an approved allowance as a real, balanced journal entry, and can reverse a posted payment with a single confirmed click, all through the same unchanged `AccountingService`/`FamilyChoreService` engine.
+Cards PF-014-DB through REP-2000 (Basic Financial Reports), REP-2001 (Financial Reports UI / Report Center), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), AI-1222 (AI Confidence Scoring), AI-1223 (Dashboard v2), FAM-1303 (Family Budgets), DB-1106A (Family Budget Dashboard Widget UI), FAM-1304 (Allowance and Chore Tracking), DB-1107A (Allowance and Chore Dashboard Widget UI), FAM-1305 (Allowance Payment Posting Through Accounting Engine), DB-1107B (Allowance Payment Dashboard Action Form), and DB-1107C (Allowance Payment Reversal Dashboard Action) are **COMPLETE**. The database has 46 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and the dashboard is the AI-centric "Today" landing page — surfacing health score, proactive alerts, confidence-aware recommendations, optimizer shortcuts, commitments, family goals, permission-aware family budgets, and permission-aware chores/allowance. The full allowance lifecycle — chore → completion → approval → posted payment → reversal — is available both via API and dashboard, and users can now view Income Statement, Balance Sheet, Cash Flow, Net Worth, and Expense Analysis reports directly in the browser (REP-2001), with date filters and empty states, on top of the unchanged REP-2000 report engine.
 
-The next card should be **REP-2000 — Basic Financial Reports**, exposing the trial balance/income statement/balance sheet calculations `AccountingService` already implements as an actual report UI, now that bills, subscriptions, goal contributions, and allowance payments are all posting real journal entries for it to report on.
+The next card should be **IMP-701 — Excel Import**, the last unclaimed piece of the original manual/CSV/SMS/Excel import plan — CSV and SMS are already done; Excel import can reuse the entire existing import pipeline's preview/confirm/safety pattern.
 
 ---
 
@@ -937,15 +937,39 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 39
+
+### Card 39: REP-2001 — Financial Reports UI / Report Center ✅ DONE
+
+**PLAN_V2 Reference:** REP-2001 (informal UI follow-up to REP-2000, which was already completed as Card 20 — the placeholder previously here mistakenly re-recommended REP-2000 itself; that has been corrected)
+**Type:** Feature / Reports
+**Priority:** MEDIUM
+
+**Completed:**
+- Added `GET /reports` (Report Center page) and `GET /reports/partials/{income-statement,balance-sheet,cash-flow,net-worth,expense-analysis}`, all built on the unchanged REP-2000 `ReportService`/generators — no report calculation logic was duplicated.
+- New templates: `reports/index.html`, `reports/partials/report_filters.html`, and one partial per report plus a shared `empty_state.html`.
+- Sensible date defaults (current month for period reports, today for as-of reports); invalid ranges render a safe inline error instead of an exception.
+- HTMX tabs/filters refresh only `#report-panel`, matching the existing `/dashboard/partials/*` convention; added a "Reports" sidebar link.
+- Verified strictly read-only and fully tenant/RLS-isolated.
+- No schema changes; 20 new tests; full suite **624 passed, 1 skipped**.
+
+**Remaining:**
+- No PDF/Excel export (out of scope for this card).
+- No family/member-level report permissions (unchanged limitation from REP-2000).
+
+**Test results:** 624 passed, 1 skipped
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 39: REP-2000 — Basic Financial Reports
+### Card 40: IMP-701 — Excel Import
 
-**Decision:** With allowance/chore tracking, payment posting, and payment reversal now complete both via API and dashboard (FAM-1304 → DB-1107A → FAM-1305 → DB-1107B → DB-1107C), and with bills/subscriptions (BILL-801A), goal contributions (GOAL-1401A), and allowance payments (FAM-1305) all now flowing real, balanced journal entries through `AccountingService`, the accounting engine has meaningfully more data in it than at any prior point — but there is still no dedicated report UI to view it. `AccountingService` already implements `get_trial_balance()`, `get_income_statement()`, and `get_balance_sheet()` (used internally, not yet exposed as routes/pages). This was already the recommended next step after GOAL-1401A; it was deferred through the family-finance dashboard trilogy and is now the most valuable unclaimed, well-scoped next step.
+**Decision:** `PLAN_V2_CARD_STATUS.md` lists CSV import and SMS bank-alert parsing as already **Done** (`app/imports/`), but Excel import (`IMP-701`) is still **Missing** — the last unclaimed piece of the original three-format import plan (manual/CSV/SMS were built; Excel was explicitly deferred at that time). With reports now able to visualize posted data end-to-end (REP-2000 → REP-2001), giving users an easy way to *get* their transaction history into the ledger in the first place — via the spreadsheet format most people already have their bank/budget data in — is the next well-scoped, high-value gap, and it can reuse the entire existing CSV import pipeline's preview/confirm/account-mapping/safety pattern almost unchanged.
 
-**What to tell the coding agent for REP-2000:**
+**What to tell the coding agent for IMP-701:**
 
-> "Implement REP-2000: Basic Financial Reports. Add report routes/pages (trial balance, income statement, balance sheet/net worth) that call the existing, unchanged AccountingService.get_trial_balance()/get_income_statement()/get_balance_sheet() methods — do not duplicate their calculation logic. Add a Reports section to the main navigation. Respect tenant scoping and RLS (all reports must be scoped to the current tenant only), and respect account visibility (FamilyAccountAccessService) so a report never surfaces a private account's detail to a family member who couldn't otherwise see it — decide and document how to handle aggregate totals that include inaccessible private accounts. Support a date range (from_date/to_date) where the underlying service methods already accept one. Add tests for: each report renders correct figures against known posted journal entries, tenant isolation, account-visibility handling, and full regression."
+> "Implement IMP-701: Excel Import. Add an Excel (.xlsx) parser alongside the existing CSV import pipeline in app/imports/ — reuse the same ImportJob model, upload/preview/confirm flow, and account-mapping/visibility safety checks already built for CSV import (do not duplicate the confirm/posting logic). Parse .xlsx files (openpyxl or similar) into the same row structure the CSV parser already produces, so the rest of the pipeline (preview, column mapping, confirm, journal-entry posting via AccountingService) needs no changes. Handle common real-world Excel quirks (multiple sheets — pick the first or let the user choose; header row detection; date/number cell formats) with clear, safe error messages rather than crashing. Respect tenant scoping, RLS, and account-access checks exactly as CSV import already does. Add tests for: successful .xlsx upload/preview/confirm, multi-sheet handling, malformed/empty file rejection, tenant isolation, and full regression."
 
 ---
 

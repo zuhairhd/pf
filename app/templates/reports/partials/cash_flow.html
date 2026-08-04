@@ -1,0 +1,64 @@
+{% include "reports/partials/report_filters.html" %}
+
+{% if error %}
+<div class="alert alert-warning py-2 mb-0" role="alert">{{ error }}</div>
+{% elif report is none %}
+<div class="text-center py-4">
+    <i class="bi bi-exclamation-triangle fs-1 text-muted mb-3"></i>
+    <p class="text-muted mb-0">This report is temporarily unavailable. Your data is safe and unchanged.</p>
+</div>
+{% else %}
+
+<div class="row g-3 mb-4">
+    <div class="col-sm-4">
+        <div class="stat-card stat-card-sm">
+            <p class="card-label text-muted mb-1">Cash Inflow</p>
+            <h5 class="card-value mb-0 text-success">{{ report.currency }} {{ "%.3f"|format(report.cash_inflow) }}</h5>
+        </div>
+    </div>
+    <div class="col-sm-4">
+        <div class="stat-card stat-card-sm">
+            <p class="card-label text-muted mb-1">Cash Outflow</p>
+            <h5 class="card-value mb-0 text-danger">{{ report.currency }} {{ "%.3f"|format(report.cash_outflow) }}</h5>
+        </div>
+    </div>
+    <div class="col-sm-4">
+        <div class="stat-card stat-card-sm">
+            <p class="card-label text-muted mb-1">Net Cash Flow</p>
+            <h5 class="card-value mb-0 {% if report.net_cash_flow >= 0 %}text-success{% else %}text-danger{% endif %}">
+                {{ report.currency }} {{ "%.3f"|format(report.net_cash_flow) }}
+            </h5>
+        </div>
+    </div>
+</div>
+
+{% if report.by_account %}
+<h6 class="text-muted mb-2">By Account</h6>
+<table class="table table-sm">
+    <thead>
+        <tr>
+            <th>Account</th>
+            <th class="text-end">Inflow</th>
+            <th class="text-end">Outflow</th>
+            <th class="text-end">Net</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in report.by_account %}
+        <tr>
+            <td>{{ row.account_code }} &mdash; {{ row.account_name }}</td>
+            <td class="text-end">{{ report.currency }} {{ "%.3f"|format(row.inflow) }}</td>
+            <td class="text-end">{{ report.currency }} {{ "%.3f"|format(row.outflow) }}</td>
+            <td class="text-end {% if row.net >= 0 %}text-success{% else %}text-danger{% endif %}">
+                {{ report.currency }} {{ "%.3f"|format(row.net) }}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+{% set message = "No cash/bank account activity found for this period." %}
+{% include "reports/partials/empty_state.html" %}
+{% endif %}
+
+{% endif %}

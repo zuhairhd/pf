@@ -1,0 +1,59 @@
+{% include "reports/partials/report_filters.html" %}
+
+{% if error %}
+<div class="alert alert-warning py-2 mb-0" role="alert">{{ error }}</div>
+{% elif report is none %}
+<div class="text-center py-4">
+    <i class="bi bi-exclamation-triangle fs-1 text-muted mb-3"></i>
+    <p class="text-muted mb-0">This report is temporarily unavailable. Your data is safe and unchanged.</p>
+</div>
+{% else %}
+
+<div class="row g-3 mb-4">
+    <div class="col-sm-4">
+        <div class="stat-card stat-card-sm">
+            <p class="card-label text-muted mb-1">Total Assets</p>
+            <h5 class="card-value mb-0 text-success">{{ report.currency }} {{ "%.3f"|format(report.total_assets) }}</h5>
+        </div>
+    </div>
+    <div class="col-sm-4">
+        <div class="stat-card stat-card-sm">
+            <p class="card-label text-muted mb-1">Total Liabilities</p>
+            <h5 class="card-value mb-0 text-danger">{{ report.currency }} {{ "%.3f"|format(report.total_liabilities) }}</h5>
+        </div>
+    </div>
+    <div class="col-sm-4">
+        <div class="stat-card stat-card-sm">
+            <p class="card-label text-muted mb-1">Net Worth</p>
+            <h5 class="card-value mb-0 {% if report.net_worth >= 0 %}text-success{% else %}text-danger{% endif %}">
+                {{ report.currency }} {{ "%.3f"|format(report.net_worth) }}
+            </h5>
+        </div>
+    </div>
+</div>
+
+{% if report.accounts %}
+<table class="table table-sm">
+    <thead>
+        <tr>
+            <th>Account</th>
+            <th>Type</th>
+            <th class="text-end">Amount</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in report.accounts %}
+        <tr>
+            <td>{{ row.account_code }} &mdash; {{ row.account_name }}</td>
+            <td><span class="badge bg-secondary">{{ row.account_type }}</span></td>
+            <td class="text-end">{{ report.currency }} {{ "%.3f"|format(row.amount) }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+{% set message = "No asset or liability accounts found." %}
+{% include "reports/partials/empty_state.html" %}
+{% endif %}
+
+{% endif %}
