@@ -38,7 +38,7 @@
             {{ item.chore_title }}
             {% if item.member_name %}<span class="text-muted"> &mdash; {{ item.member_name }}</span>{% endif %}
         </span>
-        <span>
+        <span class="d-flex align-items-center gap-2">
             {{ item.currency }} {{ "%.3f"|format(item.earned_amount) }}
             {% if item.payment_status == 'paid' %}
             <span class="badge bg-success">Paid</span>
@@ -50,6 +50,15 @@
             {% if item.payment_reversal_journal_entry_id %}
             <span class="text-muted">(JE #{{ item.payment_reversal_journal_entry_id }})</span>
             {% endif %}
+            {% endif %}
+            {% if item.can_reverse %}
+            <button class="btn btn-sm btn-outline-danger"
+                    hx-post="/dashboard/partials/family-chore-completions/{{ item.id }}/reverse-payment"
+                    hx-target="#family-chores-widget"
+                    hx-swap="outerHTML"
+                    hx-confirm="Reverse this allowance payment? This creates a reversing journal entry and cannot be undone.">
+                <i class="bi bi-arrow-counterclockwise"></i> Reverse
+            </button>
             {% endif %}
         </span>
     </div>

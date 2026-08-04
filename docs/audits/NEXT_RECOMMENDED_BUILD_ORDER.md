@@ -10,9 +10,9 @@
 
 ## Executive Summary
 
-Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), AI-1222 (AI Confidence Scoring), AI-1223 (Dashboard v2), FAM-1303 (Family Budgets), DB-1106A (Family Budget Dashboard Widget UI), FAM-1304 (Allowance and Chore Tracking), DB-1107A (Allowance and Chore Dashboard Widget UI), FAM-1305 (Allowance Payment Posting Through Accounting Engine), and DB-1107B (Allowance Payment Dashboard Action Form) are **COMPLETE**. The database has 46 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and the dashboard is the AI-centric "Today" landing page — surfacing health score, proactive alerts, confidence-aware recommendations, optimizer shortcuts, commitments, family goals, permission-aware family budgets, and permission-aware chores/allowance. Families can define chores, assign them to members with an allowance amount, track completion/approval, see due-soon/overdue chores plus a role-scoped allowance summary on the dashboard, and — as of DB-1107B — HEAD/PARENT can select payment/expense accounts and post an approved allowance as a real, balanced journal entry directly from the dashboard, through the same accounting engine as the FAM-1305 API.
+Cards PF-014-DB through REP-2000 (Basic Financial Reports — still pending, see below), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), AI-1222 (AI Confidence Scoring), AI-1223 (Dashboard v2), FAM-1303 (Family Budgets), DB-1106A (Family Budget Dashboard Widget UI), FAM-1304 (Allowance and Chore Tracking), DB-1107A (Allowance and Chore Dashboard Widget UI), FAM-1305 (Allowance Payment Posting Through Accounting Engine), DB-1107B (Allowance Payment Dashboard Action Form), and DB-1107C (Allowance Payment Reversal Dashboard Action) are **COMPLETE**. The database has 46 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and the dashboard is the AI-centric "Today" landing page — surfacing health score, proactive alerts, confidence-aware recommendations, optimizer shortcuts, commitments, family goals, permission-aware family budgets, and permission-aware chores/allowance. The full allowance lifecycle — chore → completion → approval → posted payment → reversal — is now available both via API and directly from the dashboard: HEAD/PARENT can select payment/expense accounts and post an approved allowance as a real, balanced journal entry, and can reverse a posted payment with a single confirmed click, all through the same unchanged `AccountingService`/`FamilyChoreService` engine.
 
-The next card should be **DB-1107C — Allowance Payment Reversal Dashboard Action**, adding a simple, confirmed "Reverse Payment" action to the dashboard's Recent Payments list so HEAD/PARENT no longer need the API to undo a posted allowance payment.
+The next card should be **REP-2000 — Basic Financial Reports**, exposing the trial balance/income statement/balance sheet calculations `AccountingService` already implements as an actual report UI, now that bills, subscriptions, goal contributions, and allowance payments are all posting real journal entries for it to report on.
 
 ---
 
@@ -916,15 +916,36 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 38
+
+### Card 38: DB-1107C — Allowance Payment Reversal Dashboard Action ✅ DONE
+
+**PLAN_V2 Reference:** DB-1107C (informal follow-up to DB-1107B, completing the FAM-1305 post/reverse pair on the dashboard)
+**Type:** Feature / Dashboard
+**Priority:** LOW
+
+**Completed:**
+- Added `POST /dashboard/partials/family-chore-completions/{id}/reverse-payment`, reusing `FamilyChoreService.reverse_payment()` unchanged.
+- Added a "Reverse Payment" button (HEAD/PARENT only, `hx-confirm` prompt, whole-widget refresh) to each eligible Paid item in the Recent Payments list — no new confirmation route or result template needed, matching the existing Approve/Submit-Completion quick-action pattern exactly.
+- Verified idempotency, permission gating, and that the original payment journal entry's lines remain byte-for-byte unchanged after a reversal.
+- No schema changes; 21 new tests; full suite **604 passed, 1 skipped**.
+
+**Remaining:**
+- None specific to this card — the FAM-1304 → DB-1107A → FAM-1305 → DB-1107B → DB-1107C allowance/chore/payment lifecycle is now complete end-to-end, both via API and dashboard.
+
+**Test results:** 604 passed, 1 skipped
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 38: DB-1107C — Allowance Payment Reversal Dashboard Action
+### Card 39: REP-2000 — Basic Financial Reports
 
-**Decision:** DB-1107B closes the posting half of the dashboard payment loop; the reversal half (`FamilyChoreService.reverse_payment()`, FAM-1305/ACC-503A) is still API-only. A simple, clearly-confirmed "Reverse Payment" action in the new "Recent Payments" list — HEAD/PARENT only, no account selection needed since reversal always targets the original payment's own accounts — is the natural, low-risk completion of this dashboard trilogy, mirroring how the existing "Approve" quick action already uses a plain `hx-confirm` for a similarly consequential one-click action.
+**Decision:** With allowance/chore tracking, payment posting, and payment reversal now complete both via API and dashboard (FAM-1304 → DB-1107A → FAM-1305 → DB-1107B → DB-1107C), and with bills/subscriptions (BILL-801A), goal contributions (GOAL-1401A), and allowance payments (FAM-1305) all now flowing real, balanced journal entries through `AccountingService`, the accounting engine has meaningfully more data in it than at any prior point — but there is still no dedicated report UI to view it. `AccountingService` already implements `get_trial_balance()`, `get_income_statement()`, and `get_balance_sheet()` (used internally, not yet exposed as routes/pages). This was already the recommended next step after GOAL-1401A; it was deferred through the family-finance dashboard trilogy and is now the most valuable unclaimed, well-scoped next step.
 
-**What to tell the coding agent for DB-1107C:**
+**What to tell the coding agent for REP-2000:**
 
-> "Implement DB-1107C: Allowance Payment Reversal Dashboard Action. Add a 'Reverse Payment' button (HEAD/PARENT only, hx-confirm prompt) to each 'Paid' item in the dashboard's Recent Payments list (app/templates/dashboard/partials/family_chore_ready_to_pay.html), posting to a new HTMX route in app/routers/dashboard.py that calls FamilyChoreService.reverse_payment() unchanged — no account selection needed. Refresh the whole widget on success (same HX-Retarget/HX-Reswap pattern as DB-1107B's post-payment route). Respect the existing HEAD/PARENT-only permission gate, idempotency (repeated reversal must not duplicate a reversal journal entry), and RLS/tenant isolation. Add tests for: button appears only for HEAD/PARENT, reversal creates a balanced reversing journal entry, repeated reversal does not duplicate it, cannot reverse an unpaid completion, tenant isolation, and full regression."
+> "Implement REP-2000: Basic Financial Reports. Add report routes/pages (trial balance, income statement, balance sheet/net worth) that call the existing, unchanged AccountingService.get_trial_balance()/get_income_statement()/get_balance_sheet() methods — do not duplicate their calculation logic. Add a Reports section to the main navigation. Respect tenant scoping and RLS (all reports must be scoped to the current tenant only), and respect account visibility (FamilyAccountAccessService) so a report never surfaces a private account's detail to a family member who couldn't otherwise see it — decide and document how to handle aggregate totals that include inaccessible private accounts. Support a date range (from_date/to_date) where the underlying service methods already accept one. Add tests for: each report renders correct figures against known posted journal entries, tenant isolation, account-visibility handling, and full regression."
 
 ---
 

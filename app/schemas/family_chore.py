@@ -204,6 +204,7 @@ class DashboardPaymentHistoryItem(BaseModel):
     payment_journal_entry_id: Optional[int] = None
     payment_reversal_journal_entry_id: Optional[int] = None
     paid_at: Optional[datetime] = None
+    can_reverse: bool = False
 
 
 class DashboardAllowanceMemberBreakdown(BaseModel):

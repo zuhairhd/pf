@@ -89,7 +89,7 @@
 | SUB-900 to SUB-901 | Subscriptions | **Done** (`app/routers/subscriptions.py`, CRUD, mark-paid payment posting through `AccountingService`, payment reversal support, pause/cancel/activate, renewals, equivalent amounts, tests) |
 | ACC-503A | Journal Entry Reversal Support | **Done** (`AccountingService.reverse_journal_entry`, reversal metadata, bill/subscription reversal integration, tests) |
 | BDG-1000 to BDG-1003 | Budgets | **Done** for FAM-1303 family budgets (visibility, permissions, categories, budget-vs-actual); legacy simple `/budgets` router fixed and delegates to the safe service |
-| DB-1100 to DB-1107 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI, DB-1105A family goals widget UI, DB-1106A family budgets widget UI, DB-1107A allowance/chore widget UI, and DB-1107B allowance payment dashboard form; Partial for remaining dashboard widgets |
+| DB-1100 to DB-1107 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI, DB-1105A family goals widget UI, DB-1106A family budgets widget UI, DB-1107A allowance/chore widget UI, DB-1107B allowance payment dashboard form, and DB-1107C allowance payment reversal dashboard action; Partial for remaining dashboard widgets |
 | AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client, AI-1214 What-If Simulator, AI-1211 Debt Optimizer, AI-1212 Savings Optimizer, AI-1213 Goal Planner, AI-1219 Proactive Alerts, AI-1220 AI Chat Interface, AI-1221 AI Memory System, AI-1222 AI Confidence Scoring, and AI-1223 Dashboard v2; Partial/Missing for AI-1215 Recommendation Engine, AI-1216/1217/1218 Daily/Weekly/Monthly Review Generation (not built as standalone cards) |
 | FAM-1300 | Family Finance Foundation | **Done** |
 | FAM-1301 | Family Account Visibility and Shared/Private Data Rules | **Done** |
@@ -100,6 +100,7 @@
 | DB-1107A | Allowance and Chore Dashboard Widget UI | **Done** (dashboard widget, submit/approve HTMX quick actions, role-scoped visibility, 25 tests) |
 | FAM-1305 | Allowance Payment Posting Through Accounting Engine | **Done** (balanced journal entry posting via AccountingService, idempotent, safely reversible via ACC-503A, HEAD/PARENT-only, 30 tests) |
 | DB-1107B | Allowance Payment Dashboard Action Form | **Done** (inline account-picker payment form, HTMX post/refresh, HEAD/PARENT-only, 29 tests) |
+| DB-1107C | Allowance Payment Reversal Dashboard Action | **Done** (Reverse Payment button in Recent Payments, reuses FamilyChoreService.reverse_payment() unchanged, HEAD/PARENT-only, 21 tests) |
 | GOAL-1400 to GOAL-1402 | Goals | **Done** for GOAL-1401A goal-contribution accounting posting; Partial for remaining goal planning/reversal |
 | LOAN-1500 to LOAN-1505 | Loans | Partial (models, routes, service exist) |
 | NOTIF-1600 to NOTIF-1604 | Notifications | **Done** for NOTIF-1600 (email backend, reminder generation, CRUD/preferences routes, tests); Partial for remaining notification channels |
@@ -565,9 +566,31 @@
 
 ---
 
+## Completed Card 38
+
+### Card 38: DB-1107C — Allowance Payment Reversal Dashboard Action ✅ DONE
+
+**PLAN_V2 Reference:** DB-1107C (informal follow-up to DB-1107B, completing the FAM-1305 post/reverse pair on the dashboard)
+**Type:** Feature / Dashboard
+**Priority:** LOW
+
+**Completed:**
+- Added `POST /dashboard/partials/family-chore-completions/{id}/reverse-payment`, reusing `FamilyChoreService.reverse_payment()` (FAM-1305) completely unchanged — which itself delegates entirely to `AccountingService.reverse_journal_entry()` (ACC-503A).
+- Added a "Reverse Payment" button to the Recent Payments list (`family_chore_ready_to_pay.html`), shown only when the viewer is HEAD/PARENT and the item is paid-and-not-yet-reversed; uses a single `hx-post` + `hx-confirm` + whole-widget refresh, matching the existing Approve/Submit-Completion quick-action pattern exactly — no new confirmation route or result template needed.
+- Verified idempotency (repeated dashboard clicks never duplicate a reversal journal entry), permission gating (TEEN/CHILD/VIEWER rejected even on a crafted request), and that the original payment journal entry's lines are byte-for-byte unchanged after a reversal.
+- No schema changes; no Alembic migration (Alembic head unchanged at `bd89e4fcf4b9`).
+- Added 21 integration tests; full suite **604 passed, 1 skipped**.
+
+**Remaining:**
+- Reversal error responses use a flat 400 status (matching the DB-1107A quick-action precedent) rather than distinguishing 403/404, an intentional consistency choice.
+
+**Test results:** 604 passed, 1 skipped
+
+---
+
 ## Latest Completed Card
 
-**DB-1107B - Allowance Payment Dashboard Action Form** is complete. HEAD/PARENT users can now post an approved allowance payment directly from the Chores & Allowance dashboard widget by explicitly selecting a payment account and an expense account — the dashboard never guesses or silently chooses accounts. Submission goes through the unchanged FAM-1305 `FamilyChoreService.post_payment()` path, which only ever posts through `AccountingService`. The widget now shows an actionable "Ready to Pay" list and a small "Recent Payments" history with Paid/Reversed status and journal entry references. Viewing the dashboard and opening the form remain strictly read-only; only the explicit submit action creates a journal entry, and repeated submissions never duplicate one. Tenant isolation and RLS remain enforced and the full test suite passes.
+**DB-1107C - Allowance Payment Reversal Dashboard Action** is complete. HEAD/PARENT users can now reverse a posted allowance payment directly from the Chores & Allowance dashboard's Recent Payments list, with a single confirmed click — no new reversal logic was written; the action reuses the FAM-1305/ACC-503A reversal engine unchanged. The original payment journal entry is never deleted or mutated; the reversal is idempotent, HEAD/PARENT-only, and fully tenant/RLS-isolated. This completes the full allowance-to-accounting lifecycle (chore → completion → approval → posted payment → reversal) available both via API and dashboard. The full test suite passes.
 
 ---
 

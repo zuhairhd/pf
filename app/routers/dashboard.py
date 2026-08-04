@@ -912,6 +912,12 @@ async def _build_family_chores_dashboard(db: AsyncSession, user: User) -> dict:
             payment_journal_entry_id=completion.payment_journal_entry_id,
             payment_reversal_journal_entry_id=completion.payment_reversal_journal_entry_id,
             paid_at=completion.paid_at,
+            can_reverse=(
+                can_post_payment
+                and completion.payment_status == ChorePaymentStatus.PAID.value
+                and bool(completion.payment_journal_entry_id)
+                and not completion.payment_reversal_journal_entry_id
+            ),
         )
         for completion in recent_payment_completions
     ]
@@ -1260,4 +1266,48 @@ async def family_chore_completions_dashboard_post_payment(
             "form_error": form_error,
         },
         status_code=_dashboard_chore_error_status(form_error),
+    )
+
+
+@router.post(
+    "/partials/family-chore-completions/{completion_id}/reverse-payment",
+    response_class=HTMLResponse,
+)
+async def family_chore_completions_reverse_payment_partial(
+    request: Request,
+    completion_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Reverse a posted allowance payment from the dashboard widget (HEAD/PARENT only).
+
+    Reuses FamilyChoreService.reverse_payment() unchanged, which delegates
+    entirely to AccountingService.reverse_journal_entry() (ACC-503A) — the
+    original payment journal entry is never deleted or mutated, and a
+    reversal is only ever created once (idempotent on
+    payment_reversal_journal_entry_id). Follows the exact same
+    action_error / whole-widget-refresh pattern already used by the
+    submit-completion and approve-completion quick actions (DB-1107A).
+    """
+    service = FamilyChoreService(db, tenant_id=user.organization_id, user=user)
+    action_error = None
+    try:
+        await service.reverse_payment(completion_id)
+    except FamilyChoreServiceError as exc:
+        action_error = exc.message
+
+    try:
+        family_chores = await _build_family_chores_dashboard(db, user)
+    except Exception:
+        family_chores = None
+
+    return templates.TemplateResponse(
+        request,
+        "dashboard/partials/family_chores_widget.html",
+        {
+            "family_chores": family_chores,
+            "currency": settings.CURRENCY_DEFAULT,
+            "action_error": action_error,
+        },
+        status_code=400 if action_error else 200,
     )
