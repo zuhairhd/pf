@@ -88,9 +88,17 @@ class GoalContribution(Base, TimestampMixin, TenantMixin):
     journal_entry_id = Column(Integer, ForeignKey("journal_entries.id"), nullable=True, index=True)
     posting_status = Column(String(20), default="progress_only", nullable=False)
 
+    # Reversal fields for posted goal contributions (GOAL-1401B)
+    reversal_journal_entry_id = Column(Integer, ForeignKey("journal_entries.id"), nullable=True, index=True)
+    reversed_at = Column(DateTime, nullable=True)
+    reversed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    reversal_reason = Column(Text, nullable=True)
+
     goal = relationship("Goal", back_populates="contributions")
     contributor = relationship("User", foreign_keys=[contributed_by_user_id])
     account = relationship("Account", foreign_keys=[account_id])
     source_account = relationship("Account", foreign_keys=[source_account_id])
     destination_account = relationship("Account", foreign_keys=[destination_account_id])
     journal_entry = relationship("JournalEntry", foreign_keys=[journal_entry_id])
+    reversal_journal_entry = relationship("JournalEntry", foreign_keys=[reversal_journal_entry_id])
+    reversed_by_user = relationship("User", foreign_keys=[reversed_by_user_id])

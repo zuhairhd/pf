@@ -101,7 +101,7 @@
 | FAM-1305 | Allowance Payment Posting Through Accounting Engine | **Done** (balanced journal entry posting via AccountingService, idempotent, safely reversible via ACC-503A, HEAD/PARENT-only, 30 tests) |
 | DB-1107B | Allowance Payment Dashboard Action Form | **Done** (inline account-picker payment form, HTMX post/refresh, HEAD/PARENT-only, 29 tests) |
 | DB-1107C | Allowance Payment Reversal Dashboard Action | **Done** (Reverse Payment button in Recent Payments, reuses FamilyChoreService.reverse_payment() unchanged, HEAD/PARENT-only, 21 tests) |
-| GOAL-1400 to GOAL-1402 | Goals | **Done** for GOAL-1401A goal-contribution accounting posting; Partial for remaining goal planning/reversal |
+| GOAL-1400 to GOAL-1402 | Goals | **Done** for GOAL-1401A goal-contribution accounting posting and GOAL-1401B goal-contribution reversal; Partial for remaining goal planning (edit-in-place, multi-goal reallocation) |
 | LOAN-1500 to LOAN-1505 | Loans | Partial (models, routes, service exist) |
 | NOTIF-1600 to NOTIF-1604 | Notifications | **Done** for NOTIF-1600 (email backend, reminder generation, CRUD/preferences routes, tests); Partial for remaining notification channels |
 | ADMIN-1700 to ADMIN-1704 | Admin | Partial (router exists, limited functionality) |
@@ -667,9 +667,34 @@
 
 ---
 
+## Completed Card 42
+
+### Card 42: GOAL-1401B — Goal Contribution Reversal ✅ DONE
+
+**PLAN_V2 Reference:** GOAL-1400 to GOAL-1402 (Goals) + GOAL-1401B (Goal Contribution Reversal)
+**Type:** Feature / Goals
+**Priority:** MEDIUM
+
+**Completed:**
+- Added `FamilyGoalService.reverse_contribution()`, which reuses the exact same `AccountingService.reverse_journal_entry()` engine already proven by ACC-503A and FAM-1305 — no reversal logic was duplicated.
+- Added `POST /family/goals/{goal_id}/contributions/{contribution_id}/reverse`, following the exact route-naming convention already established by `.../contributions/{contribution_id}/post`.
+- `GoalContribution` gained four nullable columns: `reversal_journal_entry_id`, `reversed_at`, `reversed_by_user_id`, `reversal_reason` (Alembic `a4c9e1f7b2d3`, additive only).
+- Reversal is idempotent (a second call returns the existing reversal unchanged), gated by `require_manage()` (stricter than the `require_contribute()` used to add a contribution — mirrors the FAM-1305 precedent that undoing a posting requires a stronger permission than making one), and decrements `goal.current_amount` (reverting `status` from `completed` back to `active` if it drops back below target) so a reversed contribution no longer counts toward progress.
+- The original journal entry and its lines are never mutated — verified by a byte-for-byte before/after snapshot test.
+- 16 new tests (reversal, progress exclusion, permissions, tenant/RLS isolation, idempotency, API safety).
+- No dashboard UI change in this card (the Family Goals widget has no contribution-history list to attach a reversal action to) — documented follow-up: **DB-1105B — Family Goal Contribution Reversal Dashboard Action**.
+
+**Remaining:**
+- No dashboard action to reverse a contribution (tracked as DB-1105B).
+- Editing a posted contribution's amount (rather than reverse + re-add) is still not supported.
+
+**Test results:** 690 passed, 1 skipped
+
+---
+
 ## Latest Completed Card
 
-**IMP-703 - Import UI** is complete. Users can now open an Import Center (`/imports`), upload a CSV or Excel file or paste SMS bank alerts, review a live preview of valid/invalid/duplicate rows, and confirm or cancel the import — all through server-rendered HTMX partials built on top of the unchanged `ImportService`/`AccountingService`. No parser or posting logic was duplicated. Tenant isolation, RLS, and account-visibility rules remain enforced and the full test suite passes.
+**GOAL-1401B - Goal Contribution Reversal** is complete. A posted family goal contribution can now be reversed through `POST /family/goals/{goal_id}/contributions/{contribution_id}/reverse`, which creates a balanced reversing journal entry via the unchanged `AccountingService.reverse_journal_entry()` — the same engine already used for bill/subscription and allowance-payment reversal. The original journal entry is never mutated, the reversal is idempotent, goal progress correctly excludes reversed amounts, and only HEAD/PARENT (or an ADULT managing their own goal) may reverse a contribution. Tenant isolation, RLS, and the full test suite all pass.
 
 ---
 

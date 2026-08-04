@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Dict, List, Optional
 
@@ -378,6 +378,67 @@ class FamilyGoalService:
         goal = await self.get_goal(goal_id)
         await self.require_contribute(goal)
         return await self._post_contribution_to_accounting(contribution, goal)
+
+    async def reverse_contribution(
+        self,
+        goal_id: int,
+        contribution_id: int,
+        reason: Optional[str] = None,
+        reversal_date: Optional[date] = None,
+    ) -> GoalContribution:
+        """Reverse a posted goal contribution's journal entry.
+
+        Idempotent: if a reversal already exists, it is returned unchanged and
+        no new journal entry is created. Reversing is a stricter action than
+        contributing, so it uses require_manage() (HEAD/PARENT always allowed;
+        ADULT only for shared/family goals or their own private goal) rather
+        than the more permissive require_contribute() used by add_contribution
+        -- matching the FAM-1305 allowance-payment-reversal precedent, where
+        undoing a posted amount is gated more tightly than creating one.
+
+        Progress-only contributions (no journal_entry_id) cannot be reversed
+        here -- there is no posting to undo. The original journal entry and
+        its lines are never deleted or mutated; only reversal metadata is
+        recorded on the contribution and the reversal entry itself.
+        """
+        contribution = await self.get_contribution(goal_id, contribution_id)
+        goal = await self.get_goal(goal_id)
+        await self.require_manage(goal)
+
+        if contribution.journal_entry_id is None:
+            raise FamilyGoalServiceError(
+                "This contribution was never posted to accounting and cannot be reversed"
+            )
+
+        if contribution.reversal_journal_entry_id:
+            return contribution
+
+        accounting = AccountingService(self.db, self.tenant_id)
+        reversal = await accounting.reverse_journal_entry(
+            contribution.journal_entry_id,
+            reversal_date=reversal_date,
+            reason=reason or f"Goal contribution reversed: {goal.name}",
+            created_by=self.user.id,
+        )
+
+        contribution.reversal_journal_entry_id = reversal.id
+        contribution.posting_status = "reversed"
+        contribution.reversed_at = datetime.utcnow()
+        contribution.reversed_by_user_id = self.user.id
+        contribution.reversal_reason = reason
+
+        # Exclude the reversed amount from active goal progress. current_amount
+        # is a running total incremented at contribution time (not re-derived
+        # from summing contributions), so it must be decremented explicitly.
+        goal.current_amount -= contribution.amount
+        if goal.current_amount < 0:
+            goal.current_amount = Decimal("0")
+        if goal.status == GoalStatus.COMPLETED.value and goal.current_amount < goal.target_amount:
+            goal.status = GoalStatus.ACTIVE.value
+
+        await self.db.commit()
+        await self.db.refresh(contribution)
+        return contribution
 
     async def get_progress(self, goal_id: int) -> Dict:
         goal = await self.get_goal(goal_id)

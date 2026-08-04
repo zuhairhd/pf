@@ -68,10 +68,21 @@ class GoalContributionResponse(BaseModel):
     destination_account_id: Optional[int] = None
     journal_entry_id: Optional[int] = None
     posting_status: str
+    reversal_journal_entry_id: Optional[int] = None
+    reversed_at: Optional[datetime] = None
+    reversed_by_user_id: Optional[int] = None
+    reversal_reason: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class GoalContributionReversalRequest(BaseModel):
+    """Request body for reversing a posted goal contribution."""
+
+    reversal_date: Optional[date] = None
+    reason: Optional[str] = Field(default=None, max_length=500)
 
 
 class GoalResponse(BaseModel):

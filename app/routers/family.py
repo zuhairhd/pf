@@ -33,6 +33,7 @@ from app.schemas.goal import (
     FamilyGoalCreate,
     FamilyGoalUpdate,
     GoalContributionCreate,
+    GoalContributionReversalRequest,
     GoalResponse,
     GoalContributionResponse,
     GoalProgressResponse,
@@ -345,6 +346,10 @@ def _to_contribution_response(contribution) -> GoalContributionResponse:
         destination_account_id=contribution.destination_account_id,
         journal_entry_id=contribution.journal_entry_id,
         posting_status=contribution.posting_status,
+        reversal_journal_entry_id=contribution.reversal_journal_entry_id,
+        reversed_at=contribution.reversed_at,
+        reversed_by_user_id=contribution.reversed_by_user_id,
+        reversal_reason=contribution.reversal_reason,
         created_at=contribution.created_at,
         updated_at=contribution.updated_at,
     )
@@ -508,6 +513,38 @@ async def post_goal_contribution_to_accounting(
     service = _goal_service(db, user)
     try:
         contribution = await service.post_contribution_to_accounting(goal_id, contribution_id)
+    except FamilyGoalServiceError as exc:
+        msg = exc.message.lower()
+        if "not found" in msg:
+            status_code = 404
+        elif "permission" in msg or "access" in msg or "not allowed" in msg:
+            status_code = 403
+        else:
+            status_code = 400
+        raise HTTPException(status_code=status_code, detail=exc.message)
+    return _to_contribution_response(contribution)
+
+
+@router.post(
+    "/goals/{goal_id}/contributions/{contribution_id}/reverse",
+    response_model=GoalContributionResponse,
+)
+async def reverse_goal_contribution(
+    goal_id: int,
+    contribution_id: int,
+    payload: GoalContributionReversalRequest,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Reverse a posted family goal contribution's journal entry."""
+    service = _goal_service(db, user)
+    try:
+        contribution = await service.reverse_contribution(
+            goal_id,
+            contribution_id,
+            reason=payload.reason,
+            reversal_date=payload.reversal_date,
+        )
     except FamilyGoalServiceError as exc:
         msg = exc.message.lower()
         if "not found" in msg:
