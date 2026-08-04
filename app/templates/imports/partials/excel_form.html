@@ -1,0 +1,46 @@
+{% if form_error %}
+<div class="alert alert-warning py-2" role="alert">{{ form_error }}</div>
+{% endif %}
+
+<form
+    hx-post="/imports/ui/excel"
+    hx-target="#import-workspace"
+    hx-swap="innerHTML"
+    hx-encoding="multipart/form-data"
+    class="row g-3"
+>
+    <div class="col-12">
+        <label class="form-label small text-muted mb-1">Excel file (.xlsx only)</label>
+        <input type="file" name="file" accept=".xlsx" class="form-control form-control-sm" required>
+        <div class="form-text">Legacy .xls workbooks are not supported.</div>
+    </div>
+    <div class="col-sm-6">
+        <label class="form-label small text-muted mb-1">Worksheet name (optional)</label>
+        <input type="text" name="sheet_name" class="form-control form-control-sm" placeholder="Defaults to the first worksheet">
+    </div>
+    <div class="col-sm-6">
+        <label class="form-label small text-muted mb-1">Default currency (optional)</label>
+        <input type="text" name="default_currency" class="form-control form-control-sm" maxlength="3" placeholder="OMR">
+    </div>
+    <div class="col-12">
+        <label class="form-label small text-muted mb-1">Default category account (optional)</label>
+        <select name="default_account_id" class="form-select form-select-sm">
+            <option value="">None</option>
+            {% for account in account_options %}
+            <option value="{{ account.id }}">{{ account.code }} &mdash; {{ account.name }} ({{ account.account_type }})</option>
+            {% endfor %}
+        </select>
+        <div class="form-text">Used only for rows with no account/category column value of their own.</div>
+    </div>
+    <div class="col-12">
+        <label class="form-label small text-muted mb-1">Column mapping (optional JSON)</label>
+        <textarea name="mapping" class="form-control form-control-sm" rows="2"
+            placeholder='{"date": "Txn Date", "amount": "Value"}'></textarea>
+        <div class="form-text">Leave blank to auto-detect columns like Date, Description, Amount, Debit, Credit.</div>
+    </div>
+    <div class="col-12">
+        <button type="submit" class="btn btn-sm btn-primary">
+            <i class="bi bi-upload"></i> Upload and Preview
+        </button>
+    </div>
+</form>

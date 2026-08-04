@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+
+{% block title %}Import Center - PF AI{% endblock %}
+{% block page_title %}Import Center{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-cloud-upload text-primary me-2"></i>Import Center</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row g-2 mb-3">
+                        <div class="col-sm-4">
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-outline-secondary w-100 import-method-btn"
+                                hx-get="/imports/partials/csv-form"
+                                hx-target="#import-workspace"
+                                hx-swap="innerHTML"
+                            >
+                                <i class="bi bi-filetype-csv me-1"></i> CSV File
+                            </button>
+                        </div>
+                        <div class="col-sm-4">
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-outline-secondary w-100 import-method-btn"
+                                hx-get="/imports/partials/excel-form"
+                                hx-target="#import-workspace"
+                                hx-swap="innerHTML"
+                            >
+                                <i class="bi bi-file-earmark-spreadsheet me-1"></i> Excel File
+                            </button>
+                        </div>
+                        <div class="col-sm-4">
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-outline-secondary w-100 import-method-btn"
+                                hx-get="/imports/partials/sms-form"
+                                hx-target="#import-workspace"
+                                hx-swap="innerHTML"
+                            >
+                                <i class="bi bi-chat-left-text me-1"></i> Paste SMS
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="import-workspace">
+                        {% include "imports/partials/csv_form.html" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-clock-history text-primary me-2"></i>Import History</h6>
+                </div>
+                <div class="card-body">
+                    {% if jobs %}
+                    <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>File</th>
+                                <th>Status</th>
+                                <th class="text-end">Total</th>
+                                <th class="text-end">Valid</th>
+                                <th class="text-end">Invalid</th>
+                                <th class="text-end">Duplicate</th>
+                                <th class="text-end">Imported</th>
+                                <th>Created</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for job in jobs %}
+                            <tr>
+                                <td><span class="badge bg-secondary text-uppercase">{{ job.import_type }}</span></td>
+                                <td>{{ job.original_filename }}</td>
+                                <td>
+                                    {% if job.status == "preview" %}
+                                    <span class="badge bg-info text-dark">Preview</span>
+                                    {% elif job.status == "completed" %}
+                                    <span class="badge bg-success">Completed</span>
+                                    {% elif job.status == "cancelled" %}
+                                    <span class="badge bg-secondary">Cancelled</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">{{ job.status }}</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">{{ job.total_rows }}</td>
+                                <td class="text-end text-success">{{ job.valid_rows }}</td>
+                                <td class="text-end text-danger">{{ job.invalid_rows }}</td>
+                                <td class="text-end text-warning">{{ job.duplicate_rows }}</td>
+                                <td class="text-end text-success">{{ job.imported_rows }}</td>
+                                <td class="small text-muted">{{ job.created_at }}</td>
+                                <td>
+                                    <a href="/imports/ui/{{ job.id }}/preview" class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-eye"></i> View
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-4">
+                        <i class="bi bi-inbox fs-1 text-muted mb-3"></i>
+                        <p class="text-muted mb-0">No import jobs yet. Upload a CSV/Excel file or paste SMS alerts above to get started.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

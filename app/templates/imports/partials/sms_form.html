@@ -1,0 +1,25 @@
+{% if form_error %}
+<div class="alert alert-warning py-2" role="alert">{{ form_error }}</div>
+{% endif %}
+
+<form
+    hx-post="/imports/ui/sms"
+    hx-target="#import-workspace"
+    hx-swap="innerHTML"
+    class="row g-3"
+>
+    <div class="col-12">
+        <label class="form-label small text-muted mb-1">Pasted SMS bank alerts</label>
+        <textarea name="sms_text" class="form-control form-control-sm" rows="6" required
+            placeholder="Paste one or more bank SMS messages, separated by a blank line."></textarea>
+    </div>
+    <div class="col-12">
+        <label class="form-label small text-muted mb-1">Label (optional)</label>
+        <input type="text" name="original_filename" class="form-control form-control-sm" value="sms_import.txt" maxlength="255">
+    </div>
+    <div class="col-12">
+        <button type="submit" class="btn btn-sm btn-primary">
+            <i class="bi bi-chat-left-text"></i> Parse and Preview
+        </button>
+    </div>
+</form>

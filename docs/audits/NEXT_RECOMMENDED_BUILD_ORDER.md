@@ -10,9 +10,9 @@
 
 ## Executive Summary
 
-Cards PF-014-DB through REP-2000 (Basic Financial Reports), REP-2001 (Financial Reports UI / Report Center), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), AI-1222 (AI Confidence Scoring), AI-1223 (Dashboard v2), FAM-1303 (Family Budgets), DB-1106A (Family Budget Dashboard Widget UI), FAM-1304 (Allowance and Chore Tracking), DB-1107A (Allowance and Chore Dashboard Widget UI), FAM-1305 (Allowance Payment Posting Through Accounting Engine), DB-1107B (Allowance Payment Dashboard Action Form), DB-1107C (Allowance Payment Reversal Dashboard Action), and IMP-701 (Excel Import) are **COMPLETE**. The database has 46 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and the dashboard is the AI-centric "Today" landing page — surfacing health score, proactive alerts, confidence-aware recommendations, optimizer shortcuts, commitments, family goals, permission-aware family budgets, and permission-aware chores/allowance. The full allowance lifecycle — chore → completion → approval → posted payment → reversal — is available both via API and dashboard, users can view Income Statement, Balance Sheet, Cash Flow, Net Worth, and Expense Analysis reports directly in the browser (REP-2001), and the import pipeline now supports CSV, SMS, and Excel (`.xlsx`) sources, all sharing the same preview/validate/de-duplicate/confirm-to-journal-entry flow.
+Cards PF-014-DB through REP-2000 (Basic Financial Reports), REP-2001 (Financial Reports UI / Report Center), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), AI-1222 (AI Confidence Scoring), AI-1223 (Dashboard v2), FAM-1303 (Family Budgets), DB-1106A (Family Budget Dashboard Widget UI), FAM-1304 (Allowance and Chore Tracking), DB-1107A (Allowance and Chore Dashboard Widget UI), FAM-1305 (Allowance Payment Posting Through Accounting Engine), DB-1107B (Allowance Payment Dashboard Action Form), DB-1107C (Allowance Payment Reversal Dashboard Action), IMP-701 (Excel Import), and IMP-703 (Import UI) are **COMPLETE**. The database has 46 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and the dashboard is the AI-centric "Today" landing page — surfacing health score, proactive alerts, confidence-aware recommendations, optimizer shortcuts, commitments, family goals, permission-aware family budgets, and permission-aware chores/allowance. The full allowance lifecycle — chore → completion → approval → posted payment → reversal — is available both via API and dashboard, users can view Income Statement, Balance Sheet, Cash Flow, Net Worth, and Expense Analysis reports directly in the browser (REP-2001), and the import pipeline now supports CSV, SMS, and Excel (`.xlsx`) sources end-to-end through a browser-facing Import Center (`/imports`) — upload/paste, preview, and confirm/cancel — all sharing the same preview/validate/de-duplicate/confirm-to-journal-entry flow.
 
-The next card should be **IMP-703 — Import UI**, the last unclaimed piece of the import strategy — CSV, SMS, and Excel import are all done at the API level, but there is still no user-facing page to upload a file, review the preview, and confirm it into the ledger.
+The next card should be **GOAL-1401B — Goal Contribution Reversal**, the last unclaimed piece of the goal-posting feature (GOAL-1401A is done) — the reversal pattern is already proven twice (bills/subscriptions via ACC-503A, allowance via DB-1107C) and just needs to be applied to goal contributions.
 
 ---
 
@@ -983,15 +983,36 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 41
+
+### Card 41: IMP-703 — Import UI ✅ DONE
+
+**PLAN_V2 Reference:** PF-008 (Import Strategy) + IMP-703 (Import UI)
+**Type:** Feature / Imports
+**Priority:** MEDIUM
+
+**Completed:**
+- Added `GET /imports` (Import Center: method cards, upload workspace, import history) on top of the unchanged `app/imports/` pipeline — no parser, validation, duplicate-detection, or confirm/posting logic was duplicated.
+- Added upload form partials and browser-friendly upload routes (`POST /imports/ui/{csv,excel,sms}`) that call the exact same `ImportService.create_job` / `create_excel_job` / `create_sms_job` methods used by the JSON API.
+- Added a preview page/partial and confirm/cancel UI routes that call the exact same `ImportService.confirm_job` / `cancel_job` methods, posting through the unchanged `AccountingService`.
+- Account pickers reuse `FamilyAccountAccessService.list_visible_accounts()` unchanged — inaccessible private accounts and cross-tenant accounts never appear.
+- 29 new tests; full suite **674 passed, 1 skipped** (up from 645 passed, 1 skipped), zero regressions.
+
+**Remaining:**
+- No visual column-mapping builder (raw JSON textarea only).
+- No client-side JS beyond HTMX.
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 41: IMP-703 — Import UI
+### Card 42: GOAL-1401B — Goal Contribution Reversal
 
-**Decision:** With CSV (IMP-700), SMS (IMP-702), and now Excel (IMP-701) import all complete and sharing one preview/validate/de-duplicate/confirm pipeline, the only remaining gap in the import strategy (PF-008) is that none of it is reachable from the browser — users must call the API directly. `PLAN_V2_CARD_STATUS.md` already lists `IMP-703` (Import UI Refinements) as **Missing**. This mirrors exactly how REP-2001 followed REP-2000: the underlying engine/API is solid, and the next well-scoped step is a thin, read/write-safe UI layer on top of it, following the same HTMX/Bootstrap conventions and page structure already established by the Report Center.
+**Decision:** `PLAN_V2_CARD_STATUS.md` lists `GOAL-1400 to GOAL-1402` as **Done** for GOAL-1401A (goal-contribution accounting posting) but **Partial** for "remaining goal planning/reversal." The reversal pattern is already well-established and proven twice in this codebase — `ACC-503A` (`AccountingService.reverse_journal_entry`) plus its bill/subscription integration, and `DB-1107C` (Allowance Payment Reversal Dashboard Action) — so goal-contribution reversal is a small, well-scoped, low-risk gap: reuse the exact same `reverse_journal_entry` engine and the same dashboard-action-button UI pattern already built for allowance payments, applied to goal contributions instead.
 
-**What to tell the coding agent for IMP-703:**
+**What to tell the coding agent for GOAL-1401B:**
 
-> "Implement IMP-703: Import UI. Add a user-facing import page (e.g. GET /imports) on top of the existing, unchanged app/imports/ pipeline (CSV upload, SMS paste, Excel upload, preview, confirm, cancel) — do not duplicate or modify any parser, validation, duplicate-detection, or confirm/posting logic. The page should let a user pick an import source (CSV file / SMS paste / Excel file), upload or paste it, see the preview (valid/invalid/duplicate row counts and a row table with validation errors), choose the bank account and default income/expense accounts, and confirm the import into journal entries — followed by a clear success/error summary. Follow the project's existing HTMX/Bootstrap conventions (see app/templates/reports/ and app/templates/dashboard/ for the established pattern) so the preview can refresh without a full page reload where practical; server-rendered fallback pages are acceptable if HTMX round-trips get too complex, with the limitation documented. All routes must require auth + tenant membership and use get_db_with_tenant_context, exactly like every other import/report route. Add tests for: page auth, rendering the preview for each import source, confirm/cancel from the UI, and tenant isolation."
+> "Implement GOAL-1401B: Goal Contribution Reversal. Add the ability to reverse a previously posted goal contribution (from GOAL-1401A), reusing AccountingService.reverse_journal_entry unchanged (do not rebuild reversal logic) and following the exact same reversal-metadata/permission pattern already used for bill/subscription payment reversal (ACC-503A) and allowance payment reversal (DB-1107C, app/routers/dashboard.py). Add a route to reverse a goal contribution's journal entry, update the goal's contributed-amount/progress accordingly, and add a reversal action to the goal dashboard widget/detail view (following the DB-1107C dashboard-action-button UI precedent) with a confirmation step. Respect tenant scoping, RLS, and account-visibility checks exactly as the existing reversal flows already do. Add tests for: successful reversal posts an offsetting journal entry and updates goal progress, reversing an already-reversed contribution is rejected, reversal respects account-visibility/permission rules, tenant isolation, and full regression."
 
 ---
 

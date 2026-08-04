@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}Import Preview - PF AI{% endblock %}
+{% block page_title %}Import Preview{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <div
+                        id="import-preview-loader"
+                        hx-get="/imports/partials/{{ job_id }}/preview"
+                        hx-trigger="load"
+                        hx-swap="outerHTML"
+                    >
+                        <p class="text-muted mb-0"><i class="bi bi-hourglass-split"></i> Loading preview&hellip;</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

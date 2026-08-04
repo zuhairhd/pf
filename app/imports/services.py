@@ -314,6 +314,16 @@ class ImportService:
         await self.db.refresh(job)
         return job
 
+    async def list_jobs(self, *, limit: int = 20) -> list[ImportJob]:
+        """Return the most recent import jobs for the tenant, newest first."""
+        result = await self.db.execute(
+            select(ImportJob)
+            .where(ImportJob.tenant_id == self.tenant_id)
+            .order_by(ImportJob.created_at.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
     async def get_job(self, job_id: int) -> Optional[ImportJob]:
         """Fetch a job by ID, scoped to the current tenant."""
         result = await self.db.execute(

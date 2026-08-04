@@ -20,7 +20,7 @@
 | PF-005 | Define AI CFO Safety Rules | **Done** | `app/ai_cfo/llm/safety.py` exists with disclaimer injection, content filtering, and prompt wrapping | Rule-based engines still need safety wrapper calls | Wrap remaining rule-based engines with `LLMSafety` |
 | PF-006 | Define User Navigation Around Financial Life | **Partial** | Templates exist for dashboard, accounts, budgets, goals, loans, ai, transactions | Navigation not reorganized around "Today", "This Month", "Cash Flow" per PLAN_V2.md | Restructure nav in `base.html` |
 | PF-007 | Define Normal User View vs Accountant View | **Partial** | Accounts router shows COA; no accountant toggle | No "Accountant View" mode, no hidden accounting | Add view mode toggle and hide COA from normal users |
-| PF-008 | Define Import Strategy (Manual, CSV, Excel, SMS) | **Done** | `app/imports/` module created, CSV + SMS + Excel parsers, upload/preview/confirm endpoints, Alembic `9ee380da96d5` | No import UI (API only) | Implement IMP-703 (Import UI) |
+| PF-008 | Define Import Strategy (Manual, CSV, Excel, SMS) | **Done** | `app/imports/` module created, CSV + SMS + Excel parsers, upload/preview/confirm endpoints, Import Center UI (IMP-703), Alembic `9ee380da96d5` | No column-mapping visual builder (raw JSON textarea only) | Consider a visual mapping builder in a future card |
 | PF-009 | Define MVP User Journey | **Unknown** | No documentation found | No user journey document | Write `docs/product/mvp-journey.md` |
 | PF-010 | Define Family Finance Model | **Partial** | `Family`, `FamilyMember`, and family-scoped `Goal` models exist with roles, shared/private account logic, and goal visibility | Allowance/chore tracking, family dashboard not implemented | Continue with DB-1105A+ |
 | PF-011 | Write PLAN_V2.md | **Done** | `PLAN_V2.md` exists at project root | — | — |
@@ -84,7 +84,7 @@
 | IMP-700 | CSV Import | **Done** (`app/imports/` module, parser, endpoints, RLS, tests) |
 | IMP-701 | Excel Import | **Done** (`app/imports/parsers/excel_parser.py`, `/imports/excel/upload`, reuses CSV/SMS confirm flow, RLS, tests) |
 | IMP-702 | SMS Bank Alert Parser | **Done** (`app/imports/parsers/sms_parser.py`, `/imports/sms/parse`, tests) |
-| IMP-703 | Import UI Refinements | **Missing** |
+| IMP-703 | Import UI Refinements | **Done** (`app/imports/routes.py` UI section, `app/templates/imports/`, Import Center + CSV/Excel/SMS forms + preview/confirm/cancel, reuses `ImportService` unchanged, RLS, tests) |
 | BILL-800 to BILL-801A | Bills | **Done** (`app/routers/bills.py`, CRUD, mark-paid payment posting through `AccountingService`, mark-unpaid reversal support, upcoming/overdue, dashboard summary, tests) |
 | SUB-900 to SUB-901 | Subscriptions | **Done** (`app/routers/subscriptions.py`, CRUD, mark-paid payment posting through `AccountingService`, payment reversal support, pause/cancel/activate, renewals, equivalent amounts, tests) |
 | ACC-503A | Journal Entry Reversal Support | **Done** (`AccountingService.reverse_journal_entry`, reversal metadata, bill/subscription reversal integration, tests) |
@@ -639,9 +639,37 @@
 
 ---
 
+## Completed Card 41
+
+### Card 41: IMP-703 — Import UI ✅ DONE
+
+**PLAN_V2 Reference:** PF-008 (Import Strategy) + IMP-703 (Import UI)
+**Type:** Feature / Imports
+**Priority:** MEDIUM
+
+**Completed:**
+- Added an Import Center (`GET /imports`) with CSV/Excel/SMS method cards, an upload workspace, and import history — all read-only until the user explicitly confirms.
+- Added upload form partials (`GET /imports/partials/{csv,excel,sms}-form`) and browser-friendly upload routes (`POST /imports/ui/{csv,excel,sms}`) that call the exact same `ImportService.create_job` / `create_excel_job` / `create_sms_job` methods the existing JSON API already uses — no parser logic was duplicated.
+- Added a preview page (`GET /imports/ui/{job_id}/preview`) and partial (`GET /imports/partials/{job_id}/preview`) showing job summary, valid/invalid/duplicate/imported counts, and a rows table with validation errors.
+- Added confirm/cancel UI routes (`POST /imports/ui/{job_id}/confirm`, `POST /imports/ui/{job_id}/cancel`) that call the exact same `ImportService.confirm_job` / `cancel_job` methods used by the JSON API — confirm still posts through the unchanged `AccountingService`.
+- Account pickers (bank/income/expense/default-category) reuse `FamilyAccountAccessService.list_visible_accounts()` unchanged, matching the same pattern already used by the dashboard's allowance payment form — inaccessible private accounts and cross-tenant accounts never appear.
+- All 18 new/updated routes require `require_tenant_member` and use `get_db_with_tenant_context`, identical to every other import/report route.
+- Added a "Imports" sidebar link in `base.html`.
+- No schema changes; no Alembic migration (head unchanged at `bd89e4fcf4b9`). One new read-only `ImportService.list_jobs()` method was added to support import history.
+- Added 29 new tests (Import Center, CSV/Excel/SMS UI, preview/confirm/cancel, account-picker visibility, read-only safety, tenant/RLS isolation).
+
+**Remaining:**
+- No visual column-mapping builder — mapping is a raw JSON textarea (matches the existing JSON API's `mapping` parameter shape).
+- No client-side JS beyond HTMX; all interactivity is server-rendered partials.
+- No bulk/background import UI for very large files (unchanged limitation carried over from IMP-700/701).
+
+**Test results:** 674 passed, 1 skipped
+
+---
+
 ## Latest Completed Card
 
-**IMP-701 - Excel Import** is complete. Users can now upload `.xlsx` workbooks through `POST /imports/excel/upload` and preview, validate, de-duplicate, and confirm them into journal entries through the exact same `ImportJob`/`ImportedRow` pipeline and confirm/posting logic already used by CSV and SMS import — no parser or posting logic was duplicated. The workbook is parsed entirely in memory (never written to disk) with formulas/macros never executed. Tenant isolation, RLS, and account-visibility rules remain enforced and the full test suite passes.
+**IMP-703 - Import UI** is complete. Users can now open an Import Center (`/imports`), upload a CSV or Excel file or paste SMS bank alerts, review a live preview of valid/invalid/duplicate rows, and confirm or cancel the import — all through server-rendered HTMX partials built on top of the unchanged `ImportService`/`AccountingService`. No parser or posting logic was duplicated. Tenant isolation, RLS, and account-visibility rules remain enforced and the full test suite passes.
 
 ---
 

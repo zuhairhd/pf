@@ -1,0 +1,185 @@
+<div id="import-preview-panel">
+
+{% if confirm_error %}
+<div class="alert alert-warning py-2" role="alert">{{ confirm_error }}</div>
+{% endif %}
+{% if cancel_error %}
+<div class="alert alert-warning py-2" role="alert">{{ cancel_error }}</div>
+{% endif %}
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h6 class="mb-1">
+            {{ job.original_filename }}
+            <span class="badge bg-secondary text-uppercase">{{ job.import_type }}</span>
+            {% if job.status == "preview" %}
+            <span class="badge bg-info text-dark">Preview</span>
+            {% elif job.status == "completed" %}
+            <span class="badge bg-success">Completed</span>
+            {% elif job.status == "cancelled" %}
+            <span class="badge bg-secondary">Cancelled</span>
+            {% endif %}
+        </h6>
+        <p class="text-muted small mb-0">
+            Uploaded {{ job.created_at }}{% if job.completed_at %} &middot; Finished {{ job.completed_at }}{% endif %}
+        </p>
+    </div>
+    <a href="/imports" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back to Import Center
+    </a>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-2">
+        <div class="stat-card stat-card-sm">
+            <p class="card-label text-muted mb-1">Total</p>
+            <h5 class="card-value mb-0">{{ job.total_rows }}</h5>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="stat-card stat-card-sm">
+            <p class="card-label text-muted mb-1">Valid</p>
+            <h5 class="card-value mb-0 text-success">{{ job.valid_rows }}</h5>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="stat-card stat-card-sm">
+            <p class="card-label text-muted mb-1">Invalid</p>
+            <h5 class="card-value mb-0 text-danger">{{ job.invalid_rows }}</h5>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="stat-card stat-card-sm">
+            <p class="card-label text-muted mb-1">Duplicate</p>
+            <h5 class="card-value mb-0 text-warning">{{ job.duplicate_rows }}</h5>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="stat-card stat-card-sm">
+            <p class="card-label text-muted mb-1">Imported</p>
+            <h5 class="card-value mb-0 text-success">{{ job.imported_rows }}</h5>
+        </div>
+    </div>
+</div>
+
+{% if job.status == "preview" %}
+    {% if job.valid_rows > 0 %}
+    <div class="card mb-4">
+        <div class="card-header"><strong>Confirm Import</strong></div>
+        <div class="card-body">
+            <form
+                hx-post="/imports/ui/{{ job.id }}/confirm"
+                hx-target="#import-preview-panel"
+                hx-swap="outerHTML"
+                class="row g-2 align-items-end"
+            >
+                <div class="col-sm-4">
+                    <label class="form-label small">Bank account</label>
+                    <select name="bank_account_id" class="form-select form-select-sm" required>
+                        <option value="">Select account&hellip;</option>
+                        {% for account in bank_accounts %}
+                        <option value="{{ account.id }}">{{ account.code }} &mdash; {{ account.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-sm-4">
+                    <label class="form-label small">Default income account</label>
+                    <select name="default_income_account_id" class="form-select form-select-sm">
+                        <option value="">None</option>
+                        {% for account in income_accounts %}
+                        <option value="{{ account.id }}">{{ account.code }} &mdash; {{ account.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-sm-4">
+                    <label class="form-label small">Default expense account</label>
+                    <select name="default_expense_account_id" class="form-select form-select-sm">
+                        <option value="">None</option>
+                        {% for account in expense_accounts %}
+                        <option value="{{ account.id }}">{{ account.code }} &mdash; {{ account.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12">
+                    <div class="form-check">
+                        <input type="checkbox" name="import_duplicates" class="form-check-input" id="import-duplicates-{{ job.id }}">
+                        <label class="form-check-label small" for="import-duplicates-{{ job.id }}">Also import duplicate rows</label>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <button type="submit" class="btn btn-sm btn-success">
+                        <i class="bi bi-check-circle"></i> Confirm Import
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-secondary py-2">No valid rows are available to import from this file.</div>
+    {% endif %}
+
+    <form hx-post="/imports/ui/{{ job.id }}/cancel" hx-target="#import-preview-panel" hx-swap="outerHTML" class="mb-4">
+        <button type="submit" class="btn btn-sm btn-outline-danger">
+            <i class="bi bi-x-circle"></i> Cancel Import
+        </button>
+    </form>
+{% elif job.status == "completed" %}
+    {% set skipped = job.total_rows - job.imported_rows %}
+    <div class="alert alert-success py-2">
+        Imported {{ job.imported_rows }} row{{ "s" if job.imported_rows != 1 else "" }} into journal entries.
+        {% if skipped > 0 %}{{ skipped }} row{{ "s" if skipped != 1 else "" }} were skipped.{% endif %}
+    </div>
+{% elif job.status == "cancelled" %}
+    <div class="alert alert-secondary py-2">This import was cancelled. No journal entries were created.</div>
+{% endif %}
+
+{% if rows %}
+<h6 class="text-muted mb-2">Rows ({{ rows|length }} shown)</h6>
+<div class="table-responsive">
+<table class="table table-sm">
+    <thead>
+        <tr>
+            <th>#</th>
+            <th>Status</th>
+            <th>Date</th>
+            <th>Description</th>
+            <th class="text-end">Amount</th>
+            <th>Details</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            <td>{{ row.row_number }}</td>
+            <td>
+                {% if row.status == "valid" %}
+                <span class="badge bg-success">Valid</span>
+                {% elif row.status == "invalid" %}
+                <span class="badge bg-danger">Invalid</span>
+                {% elif row.status == "duplicate" %}
+                <span class="badge bg-warning text-dark">Duplicate</span>
+                {% elif row.status == "imported" %}
+                <span class="badge bg-primary">Imported</span>
+                {% else %}
+                <span class="badge bg-secondary">{{ row.status }}</span>
+                {% endif %}
+            </td>
+            <td>{{ row.parsed_data.get("date", "—") }}</td>
+            <td>{{ row.parsed_data.get("description", "—") }}</td>
+            <td class="text-end">{{ row.parsed_data.get("amount", row.parsed_data.get("amount_decimal", "—")) }}</td>
+            <td class="small text-muted">
+                {% if row.validation_errors %}{{ row.validation_errors|join("; ") }}{% else %}&mdash;{% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% else %}
+<div class="text-center py-4">
+    <i class="bi bi-inbox fs-1 text-muted mb-3"></i>
+    <p class="text-muted mb-0">No rows found in this file.</p>
+</div>
+{% endif %}
+
+</div>
