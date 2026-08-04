@@ -89,7 +89,7 @@
 | SUB-900 to SUB-901 | Subscriptions | **Done** (`app/routers/subscriptions.py`, CRUD, mark-paid payment posting through `AccountingService`, payment reversal support, pause/cancel/activate, renewals, equivalent amounts, tests) |
 | ACC-503A | Journal Entry Reversal Support | **Done** (`AccountingService.reverse_journal_entry`, reversal metadata, bill/subscription reversal integration, tests) |
 | BDG-1000 to BDG-1003 | Budgets | **Done** for FAM-1303 family budgets (visibility, permissions, categories, budget-vs-actual); legacy simple `/budgets` router fixed and delegates to the safe service |
-| DB-1100 to DB-1107 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI, DB-1105A family goals widget UI, DB-1106A family budgets widget UI, and DB-1107A allowance/chore widget UI; Partial for remaining dashboard widgets |
+| DB-1100 to DB-1107 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI, DB-1105A family goals widget UI, DB-1106A family budgets widget UI, DB-1107A allowance/chore widget UI, and DB-1107B allowance payment dashboard form; Partial for remaining dashboard widgets |
 | AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client, AI-1214 What-If Simulator, AI-1211 Debt Optimizer, AI-1212 Savings Optimizer, AI-1213 Goal Planner, AI-1219 Proactive Alerts, AI-1220 AI Chat Interface, AI-1221 AI Memory System, AI-1222 AI Confidence Scoring, and AI-1223 Dashboard v2; Partial/Missing for AI-1215 Recommendation Engine, AI-1216/1217/1218 Daily/Weekly/Monthly Review Generation (not built as standalone cards) |
 | FAM-1300 | Family Finance Foundation | **Done** |
 | FAM-1301 | Family Account Visibility and Shared/Private Data Rules | **Done** |
@@ -99,6 +99,7 @@
 | FAM-1304 | Allowance and Chore Tracking | **Done** (chores, completions, approval workflow, role-scoped allowance summary, 29 tests) |
 | DB-1107A | Allowance and Chore Dashboard Widget UI | **Done** (dashboard widget, submit/approve HTMX quick actions, role-scoped visibility, 25 tests) |
 | FAM-1305 | Allowance Payment Posting Through Accounting Engine | **Done** (balanced journal entry posting via AccountingService, idempotent, safely reversible via ACC-503A, HEAD/PARENT-only, 30 tests) |
+| DB-1107B | Allowance Payment Dashboard Action Form | **Done** (inline account-picker payment form, HTMX post/refresh, HEAD/PARENT-only, 29 tests) |
 | GOAL-1400 to GOAL-1402 | Goals | **Done** for GOAL-1401A goal-contribution accounting posting; Partial for remaining goal planning/reversal |
 | LOAN-1500 to LOAN-1505 | Loans | Partial (models, routes, service exist) |
 | NOTIF-1600 to NOTIF-1604 | Notifications | **Done** for NOTIF-1600 (email backend, reminder generation, CRUD/preferences routes, tests); Partial for remaining notification channels |
@@ -539,9 +540,34 @@
 
 ---
 
+## Completed Card 37
+
+### Card 37: DB-1107B — Allowance Payment Dashboard Action Form ✅ DONE
+
+**PLAN_V2 Reference:** DB-1107B (informal follow-up to FAM-1305, matching the DB-1104A/DB-1105A/DB-1106A/DB-1107A widget-form pattern)
+**Type:** Feature / Dashboard
+**Priority:** MEDIUM
+
+**Completed:**
+- Added `GET /dashboard/partials/family-chore-completions/{id}/payment-form` (inline account-picker form) and `POST /dashboard/partials/family-chore-completions/{id}/post-payment` (submits through `FamilyChoreService.post_payment()` unchanged).
+- New templates: `family_chore_payment_form.html`, `family_chore_ready_to_pay.html`; the widget's old badge-only "ready to pay" link became a full "Ready to Pay" section with per-item "Post Payment" buttons and a small "Recent Payments" history (Paid/Reversed + journal entry reference), HEAD/PARENT only.
+- Account picker reuses `FamilyAccountAccessService.list_visible_accounts()` unchanged, filtered by type (Asset for payment, Expense for expense) — never selects accounts silently; cross-tenant accounts and non-matching-type accounts never appear.
+- On success, HTMX `HX-Retarget`/`HX-Reswap` response headers swap the whole widget in place; on error, only the inline form re-renders with a message — no journal entry is ever created on a failed submission.
+- Verified idempotency (repeated dashboard submission never duplicates a journal entry), permission gating (TEEN/CHILD/VIEWER get 403 even with a crafted request), and read-only safety while browsing/opening the form.
+- No schema changes; no Alembic migration (Alembic head unchanged at `bd89e4fcf4b9`).
+- Added 29 integration tests; full suite **583 passed, 1 skipped**.
+
+**Remaining:**
+- No reversal UI in the dashboard (documented follow-up: DB-1107C — Allowance Payment Reversal Dashboard Action).
+- Account picker cannot demonstrate excluding an "inaccessible private" account for the only permitted role (HEAD/PARENT), same structural limitation already documented in FAM-1305.
+
+**Test results:** 583 passed, 1 skipped
+
+---
+
 ## Latest Completed Card
 
-**FAM-1305 - Allowance Payment Posting Through Accounting Engine** is complete. An approved chore completion's earned allowance can now be posted as a real, balanced journal entry (debit expense, credit asset/payment account) through the existing accounting engine, and safely reversed through the existing reversal engine — both HEAD/PARENT-only, idempotent, and fully tenant/RLS-isolated. The allowance summary and dashboard widget now distinguish pending, approved-unpaid, paid, and reversed amounts. Chore completion records are preserved exactly as before; nothing bypasses `AccountingService`, no journal entry is ever deleted or mutated, and the full test suite passes.
+**DB-1107B - Allowance Payment Dashboard Action Form** is complete. HEAD/PARENT users can now post an approved allowance payment directly from the Chores & Allowance dashboard widget by explicitly selecting a payment account and an expense account — the dashboard never guesses or silently chooses accounts. Submission goes through the unchanged FAM-1305 `FamilyChoreService.post_payment()` path, which only ever posts through `AccountingService`. The widget now shows an actionable "Ready to Pay" list and a small "Recent Payments" history with Paid/Reversed status and journal entry references. Viewing the dashboard and opening the form remain strictly read-only; only the explicit submit action creates a journal entry, and repeated submissions never duplicate one. Tenant isolation and RLS remain enforced and the full test suite passes.
 
 ---
 

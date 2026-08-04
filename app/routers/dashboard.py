@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 from typing import List, Optional
 
-from fastapi import APIRouter, Request, Depends, HTTPException
+from fastapi import APIRouter, Request, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +20,7 @@ from app.models.database import get_db
 from app.models import Organization, Account, JournalEntry, JournalLine, Goal, Loan, Budget, AIReport
 from app.notifications import NotificationDeliveryService
 from app.models.budget import BudgetStatus
-from app.models.family_chore import ChoreStatus
+from app.models.family_chore import ChoreCompletionStatus, ChorePaymentStatus, ChoreStatus
 from app.schemas.bill_subscription import BillResponse, SubscriptionResponse, CommitmentSummary
 from app.schemas.budget import (
     DashboardBudgetCategoryItem,
@@ -31,14 +31,18 @@ from app.schemas.dashboard import DashboardToday
 from app.schemas.goal import FamilyGoalsDashboardResponse, DashboardFamilyGoalItem, GoalContributionCreate
 from app.schemas.family_chore import (
     ChoreCompletionCreate,
+    DashboardAccountOption,
     DashboardAllowanceMemberBreakdown,
     DashboardAllowanceSummary,
     DashboardChoreItem,
     DashboardCompletionItem,
+    DashboardPaymentHistoryItem,
+    DashboardReadyToPayItem,
     FamilyChoresDashboardResponse,
 )
 from app.services.bill_subscription_service import BillService, CommitmentService, SubscriptionService
 from app.services.dashboard_ai_service import DashboardAIService
+from app.services.family_account_access_service import FamilyAccountAccessService
 from app.services.family_budget_service import FamilyBudgetService, FamilyBudgetServiceError
 from app.services.family_chore_service import FamilyChoreService, FamilyChoreServiceError
 from app.services.family_goal_service import FamilyGoalService, FamilyGoalServiceError
@@ -870,15 +874,54 @@ async def _build_family_chores_dashboard(db: AsyncSession, user: User) -> dict:
     ]
 
     can_post_payment = await service.can_user_post_payment()
-    # "Ready to pay" is a count-only signal (approved, unpaid, earned > 0);
-    # the dashboard never selects payment/expense accounts on its own, so
-    # this only ever links to the full chores page (DB-1107B follow-up).
-    ready_to_pay_count = await service.count_approved_unpaid_completions()
+    ready_to_pay_completions = await service.list_approved_unpaid_completions_for_user()
+    recent_payment_completions = await service.list_recent_paid_completions_for_user()
+
+    # Name lookups above only cover assigned/pending members; extend for
+    # ready-to-pay and recent-payment completions too.
+    extra_member_ids = {c.completed_by_member_id for c in ready_to_pay_completions}
+    extra_member_ids.update(c.completed_by_member_id for c in recent_payment_completions)
+    missing_member_ids = extra_member_ids - set(members_by_id.keys())
+    if missing_member_ids:
+        extra_result = await db.execute(select(FamilyMember).where(FamilyMember.id.in_(missing_member_ids)))
+        members_by_id.update({m.id: m for m in extra_result.scalars().all()})
+
+    ready_to_pay_items = [
+        DashboardReadyToPayItem(
+            id=completion.id,
+            chore_id=completion.chore_id,
+            chore_title=chore_titles_by_id.get(completion.chore_id, "Unknown chore"),
+            member_id=completion.completed_by_member_id,
+            member_name=_member_name(completion.completed_by_member_id),
+            earned_amount=completion.earned_amount,
+            currency=allowance_summary["currency"],
+            approved_at=completion.approved_at,
+            can_pay=can_post_payment,
+        )
+        for completion in ready_to_pay_completions
+    ]
+
+    recent_payment_items = [
+        DashboardPaymentHistoryItem(
+            id=completion.id,
+            chore_title=chore_titles_by_id.get(completion.chore_id, "Unknown chore"),
+            member_name=_member_name(completion.completed_by_member_id),
+            earned_amount=completion.earned_amount,
+            currency=allowance_summary["currency"],
+            payment_status=completion.payment_status,
+            payment_journal_entry_id=completion.payment_journal_entry_id,
+            payment_reversal_journal_entry_id=completion.payment_reversal_journal_entry_id,
+            paid_at=completion.paid_at,
+        )
+        for completion in recent_payment_completions
+    ]
 
     return {
         "assigned_chores": assigned_items,
         "overdue_chores": overdue_items,
         "pending_approvals": pending_items,
+        "ready_to_pay": ready_to_pay_items,
+        "recent_payments": recent_payment_items,
         "allowance_summary": DashboardAllowanceSummary(
             currency=allowance_summary["currency"],
             pending_approval_amount=allowance_summary["pending_approval_amount"],
@@ -893,7 +936,7 @@ async def _build_family_chores_dashboard(db: AsyncSession, user: User) -> dict:
         "due_soon_count": len(assigned_items),
         "overdue_count": len(overdue_items),
         "pending_approvals_count": len(pending_items),
-        "ready_to_pay_count": ready_to_pay_count,
+        "ready_to_pay_count": len(ready_to_pay_items),
         "currency": allowance_summary["currency"],
         "permissions": {
             "can_manage_chores": await service.can_user_manage_chore(),
@@ -1008,4 +1051,213 @@ async def family_chore_completions_approve_partial(
             "action_error": action_error,
         },
         status_code=400 if action_error else 200,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Allowance payment dashboard action form (DB-1107B)
+# ---------------------------------------------------------------------------
+
+
+def _dashboard_chore_error_status(message: str) -> int:
+    lower = message.lower()
+    if "not found" in lower:
+        return 404
+    if "permission" in lower:
+        return 403
+    return 400
+
+
+async def _dashboard_account_options(db: AsyncSession, user: User) -> tuple[list, list]:
+    """Return (payment_account_options, expense_account_options) visible to the user.
+
+    Reuses FamilyAccountAccessService.list_visible_accounts() unchanged —
+    only accounts the user is already allowed to see/use are offered, so
+    inaccessible private accounts and cross-tenant accounts never appear.
+    """
+    access = FamilyAccountAccessService(db, tenant_id=user.organization_id, user=user)
+    visible_accounts = await access.list_visible_accounts()
+    payment_options = [
+        DashboardAccountOption(id=a.id, code=a.code, name=a.name)
+        for a in visible_accounts if a.account_type == "Asset"
+    ]
+    expense_options = [
+        DashboardAccountOption(id=a.id, code=a.code, name=a.name)
+        for a in visible_accounts if a.account_type == "Expense"
+    ]
+    return payment_options, expense_options
+
+
+async def _dashboard_ready_to_pay_item(service: FamilyChoreService, completion) -> DashboardReadyToPayItem:
+    """Build a DashboardReadyToPayItem for the payment-form partial, read-only."""
+    chore = await service._get_chore_raw(completion.chore_id)
+    member = await service._get_member(completion.completed_by_member_id)
+    return DashboardReadyToPayItem(
+        id=completion.id,
+        chore_id=completion.chore_id,
+        chore_title=chore.title if chore is not None else "Unknown chore",
+        member_id=completion.completed_by_member_id,
+        member_name=(f"{member.first_name} {member.last_name}".strip() if member else None),
+        earned_amount=completion.earned_amount,
+        currency=chore.currency if chore is not None else settings.CURRENCY_DEFAULT,
+        approved_at=completion.approved_at,
+        can_pay=True,
+    )
+
+
+@router.get(
+    "/partials/family-chore-completions/{completion_id}/payment-form",
+    response_class=HTMLResponse,
+)
+async def family_chore_payment_form_partial(
+    request: Request,
+    completion_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Render the inline payment-posting form for one approved unpaid completion.
+
+    Read-only: never creates, updates, or posts anything. HEAD/PARENT
+    only; every other role gets a safe inline message instead of a form,
+    even if they craft the request directly.
+    """
+    service = FamilyChoreService(db, tenant_id=user.organization_id, user=user)
+
+    if not await service.can_user_post_payment():
+        return templates.TemplateResponse(
+            request,
+            "dashboard/partials/family_chore_payment_form.html",
+            {"completion_id": completion_id, "completion_item": None, "payment_account_options": [],
+             "expense_account_options": [], "form_error": "You do not have permission to post allowance payments."},
+            status_code=403,
+        )
+
+    completion = await service._get_completion_raw(completion_id)
+    if completion is None:
+        return templates.TemplateResponse(
+            request,
+            "dashboard/partials/family_chore_payment_form.html",
+            {"completion_id": completion_id, "completion_item": None, "payment_account_options": [],
+             "expense_account_options": [], "form_error": "Chore completion not found."},
+            status_code=404,
+        )
+
+    if (
+        completion.status != ChoreCompletionStatus.APPROVED.value
+        or completion.payment_status != ChorePaymentStatus.UNPAID.value
+        or completion.earned_amount <= 0
+    ):
+        return templates.TemplateResponse(
+            request,
+            "dashboard/partials/family_chore_payment_form.html",
+            {"completion_id": completion_id, "completion_item": None, "payment_account_options": [],
+             "expense_account_options": [], "form_error": "This completion is not ready to pay."},
+            status_code=400,
+        )
+
+    completion_item = await _dashboard_ready_to_pay_item(service, completion)
+    payment_options, expense_options = await _dashboard_account_options(db, user)
+
+    return templates.TemplateResponse(
+        request,
+        "dashboard/partials/family_chore_payment_form.html",
+        {
+            "completion_id": completion_id,
+            "completion_item": completion_item,
+            "payment_account_options": payment_options,
+            "expense_account_options": expense_options,
+            "form_error": None,
+        },
+    )
+
+
+@router.post(
+    "/partials/family-chore-completions/{completion_id}/post-payment",
+    response_class=HTMLResponse,
+)
+async def family_chore_completions_dashboard_post_payment(
+    request: Request,
+    completion_id: int,
+    payment_account_id: Optional[int] = Form(None),
+    expense_account_id: Optional[int] = Form(None),
+    payment_date: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Submit the inline payment form and post an allowance payment.
+
+    Posts through FamilyChoreService.post_payment() unchanged — the user
+    must explicitly choose both accounts; nothing is ever guessed. On
+    success the whole Chores & Allowance widget is refreshed (via
+    HX-Retarget/HX-Reswap) so the completion moves out of "ready to pay"
+    into the allowance summary's Paid total. On any error, only the
+    inline form re-renders with a message and no journal entry is created.
+    """
+    service = FamilyChoreService(db, tenant_id=user.organization_id, user=user)
+
+    form_error: Optional[str] = None
+    if not await service.can_user_post_payment():
+        form_error = "You do not have permission to post allowance payments"
+    elif payment_account_id is None or expense_account_id is None:
+        form_error = "Please select both a payment account and an expense account."
+    else:
+        parsed_date = None
+        if payment_date:
+            try:
+                parsed_date = date.fromisoformat(payment_date)
+            except ValueError:
+                form_error = "Invalid payment date."
+
+        if form_error is None:
+            try:
+                await service.post_payment(
+                    completion_id,
+                    payment_account_id=payment_account_id,
+                    expense_account_id=expense_account_id,
+                    payment_date=parsed_date,
+                    notes=notes or None,
+                )
+            except FamilyChoreServiceError as exc:
+                form_error = exc.message
+
+    if form_error is None:
+        try:
+            family_chores = await _build_family_chores_dashboard(db, user)
+        except Exception:
+            family_chores = None
+
+        response = templates.TemplateResponse(
+            request,
+            "dashboard/partials/family_chores_widget.html",
+            {
+                "family_chores": family_chores,
+                "currency": settings.CURRENCY_DEFAULT,
+            },
+        )
+        response.headers["HX-Retarget"] = "#family-chores-widget"
+        response.headers["HX-Reswap"] = "outerHTML"
+        return response
+
+    # Re-render the inline form in place, with the error and the same
+    # account options, so the user can correct their selection.
+    completion = await service._get_completion_raw(completion_id)
+    completion_item = None
+    payment_options: list = []
+    expense_options: list = []
+    if completion is not None:
+        completion_item = await _dashboard_ready_to_pay_item(service, completion)
+        payment_options, expense_options = await _dashboard_account_options(db, user)
+
+    return templates.TemplateResponse(
+        request,
+        "dashboard/partials/family_chore_payment_form.html",
+        {
+            "completion_id": completion_id,
+            "completion_item": completion_item,
+            "payment_account_options": payment_options,
+            "expense_account_options": expense_options,
+            "form_error": form_error,
+        },
+        status_code=_dashboard_chore_error_status(form_error),
     )

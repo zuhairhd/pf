@@ -87,6 +87,14 @@
             {% include "dashboard/partials/family_chore_pending_approvals.html" %}
         </div>
 
+        {# Ready to Pay (HEAD/PARENT only — never selects accounts silently) #}
+        {% if family_chores.permissions.can_post_payment %}
+        <div class="mt-4">
+            <h6 class="text-muted mb-2">Ready to Pay</h6>
+            {% include "dashboard/partials/family_chore_ready_to_pay.html" %}
+        </div>
+        {% endif %}
+
         <!-- Allowance Summary -->
         <div class="mt-4">
             {% include "dashboard/partials/family_allowance_summary.html" %}

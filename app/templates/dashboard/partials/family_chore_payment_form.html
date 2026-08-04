@@ -1,0 +1,71 @@
+{% if form_error %}
+<div class="alert alert-warning py-2 mb-2" role="alert">
+    {{ form_error }}
+</div>
+{% if not completion_item %}
+<button type="button" class="btn btn-sm btn-outline-secondary"
+        onclick="document.getElementById('payment-form-{{ completion_id }}').innerHTML=''">
+    Close
+</button>
+{% endif %}
+{% endif %}
+
+{% if completion_item %}
+<form
+    class="payment-form p-3 border rounded bg-light mb-2"
+    hx-post="/dashboard/partials/family-chore-completions/{{ completion_id }}/post-payment"
+    hx-target="#payment-form-{{ completion_id }}"
+    hx-swap="innerHTML"
+>
+    <p class="mb-2">
+        <strong>{{ completion_item.chore_title }}</strong>
+        {% if completion_item.member_name %}
+        <span class="text-muted"> &mdash; {{ completion_item.member_name }}</span>
+        {% endif %}
+        <br>
+        <span class="text-muted">Amount: {{ completion_item.currency }} {{ "%.3f"|format(completion_item.earned_amount) }}</span>
+    </p>
+
+    <div class="row g-2 mb-2">
+        <div class="col-sm-6">
+            <label class="form-label small">Payment account (Asset)</label>
+            <select name="payment_account_id" class="form-select form-select-sm" required>
+                <option value="">Select account&hellip;</option>
+                {% for account in payment_account_options %}
+                <option value="{{ account.id }}">{{ account.code }} &mdash; {{ account.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-sm-6">
+            <label class="form-label small">Expense account</label>
+            <select name="expense_account_id" class="form-select form-select-sm" required>
+                <option value="">Select account&hellip;</option>
+                {% for account in expense_account_options %}
+                <option value="{{ account.id }}">{{ account.code }} &mdash; {{ account.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    <div class="row g-2 mb-2">
+        <div class="col-sm-6">
+            <label class="form-label small">Payment date (optional)</label>
+            <input type="date" name="payment_date" class="form-control form-control-sm">
+        </div>
+        <div class="col-sm-6">
+            <label class="form-label small">Notes (optional)</label>
+            <input type="text" name="notes" class="form-control form-control-sm" maxlength="500">
+        </div>
+    </div>
+
+    <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-sm btn-success">
+            <i class="bi bi-cash-coin"></i> Post Payment
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary"
+                onclick="document.getElementById('payment-form-{{ completion_id }}').innerHTML=''">
+            Cancel
+        </button>
+    </div>
+</form>
+{% endif %}

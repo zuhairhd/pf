@@ -10,9 +10,9 @@
 
 ## Executive Summary
 
-Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), AI-1222 (AI Confidence Scoring), AI-1223 (Dashboard v2), FAM-1303 (Family Budgets), DB-1106A (Family Budget Dashboard Widget UI), FAM-1304 (Allowance and Chore Tracking), DB-1107A (Allowance and Chore Dashboard Widget UI), and FAM-1305 (Allowance Payment Posting Through Accounting Engine) are **COMPLETE**. The database has 46 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and the dashboard is the AI-centric "Today" landing page — surfacing health score, proactive alerts, confidence-aware recommendations, optimizer shortcuts, commitments, family goals, permission-aware family budgets, and permission-aware chores/allowance. Families can define chores, assign them to members with an allowance amount, track completion/approval, see due-soon/overdue chores plus a role-scoped allowance summary on the dashboard, and — as of FAM-1305 — HEAD/PARENT can post an approved allowance as a real, balanced, safely-reversible journal entry through the existing accounting engine.
+Cards PF-014-DB through REP-2000 (Basic Financial Reports), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), AI-1222 (AI Confidence Scoring), AI-1223 (Dashboard v2), FAM-1303 (Family Budgets), DB-1106A (Family Budget Dashboard Widget UI), FAM-1304 (Allowance and Chore Tracking), DB-1107A (Allowance and Chore Dashboard Widget UI), FAM-1305 (Allowance Payment Posting Through Accounting Engine), and DB-1107B (Allowance Payment Dashboard Action Form) are **COMPLETE**. The database has 46 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and the dashboard is the AI-centric "Today" landing page — surfacing health score, proactive alerts, confidence-aware recommendations, optimizer shortcuts, commitments, family goals, permission-aware family budgets, and permission-aware chores/allowance. Families can define chores, assign them to members with an allowance amount, track completion/approval, see due-soon/overdue chores plus a role-scoped allowance summary on the dashboard, and — as of DB-1107B — HEAD/PARENT can select payment/expense accounts and post an approved allowance as a real, balanced journal entry directly from the dashboard, through the same accounting engine as the FAM-1305 API.
 
-The next card should be **DB-1107B — Allowance Payment Dashboard Action Form**, letting HEAD/PARENT select payment/expense accounts and post an allowance payment directly from the dashboard instead of only seeing a "ready to pay" badge.
+The next card should be **DB-1107C — Allowance Payment Reversal Dashboard Action**, adding a simple, confirmed "Reverse Payment" action to the dashboard's Recent Payments list so HEAD/PARENT no longer need the API to undo a posted allowance payment.
 
 ---
 
@@ -893,15 +893,38 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 37
+
+### Card 37: DB-1107B — Allowance Payment Dashboard Action Form ✅ DONE
+
+**PLAN_V2 Reference:** DB-1107B (informal follow-up to FAM-1305, matching the DB-1104A/DB-1105A/DB-1106A/DB-1107A widget-form pattern)
+**Type:** Feature / Dashboard
+**Priority:** MEDIUM
+
+**Completed:**
+- Added `GET /dashboard/partials/family-chore-completions/{id}/payment-form` and `POST /dashboard/partials/family-chore-completions/{id}/post-payment`.
+- New templates `family_chore_payment_form.html` and `family_chore_ready_to_pay.html`; the widget's "ready to pay" badge became a full actionable section with a "Recent Payments" history (Paid/Reversed + journal entry reference), HEAD/PARENT only.
+- Account picker reuses `FamilyAccountAccessService.list_visible_accounts()` unchanged, filtered by Asset/Expense type — never selects accounts silently.
+- HTMX `HX-Retarget`/`HX-Reswap` response headers swap the whole widget on success; errors re-render only the inline form.
+- Idempotent (reuses `FamilyChoreService.post_payment()` unchanged), permission-gated (403 for TEEN/CHILD/VIEWER even on a crafted request), tenant/RLS-isolated.
+- No schema changes; 29 new tests; full suite **583 passed, 1 skipped**.
+
+**Remaining:**
+- No reversal UI in the dashboard (follow-up: DB-1107C — Allowance Payment Reversal Dashboard Action).
+
+**Test results:** 583 passed, 1 skipped
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 37: DB-1107B — Allowance Payment Dashboard Action Form
+### Card 38: DB-1107C — Allowance Payment Reversal Dashboard Action
 
-**Decision:** FAM-1305 makes allowance payment posting and reversal fully functional via the API — the accounting engine now closes the loop from chore → completion → approval → paid, safely and reversibly. The dashboard, however, only shows a "ready to pay" badge linking out to `/family/chores`; HEAD/PARENT still cannot select payment/expense accounts and post directly from the dashboard. That's the natural, low-risk next step, explicitly deferred by FAM-1305's own implementation report, and it completes the family-finance dashboard trilogy's payment loop the same way DB-1107A completed the tracking loop.
+**Decision:** DB-1107B closes the posting half of the dashboard payment loop; the reversal half (`FamilyChoreService.reverse_payment()`, FAM-1305/ACC-503A) is still API-only. A simple, clearly-confirmed "Reverse Payment" action in the new "Recent Payments" list — HEAD/PARENT only, no account selection needed since reversal always targets the original payment's own accounts — is the natural, low-risk completion of this dashboard trilogy, mirroring how the existing "Approve" quick action already uses a plain `hx-confirm` for a similarly consequential one-click action.
 
-**What to tell the coding agent for DB-1107B:**
+**What to tell the coding agent for DB-1107C:**
 
-> "Implement DB-1107B: Allowance Payment Dashboard Action Form. Add a payment-posting quick action to the Chores & Allowance dashboard widget (app/routers/dashboard.py, app/templates/dashboard/partials/family_chores_widget.html) that lets HEAD/PARENT pick a payment (Asset) account and an expense account from their visible accounts (FamilyAccountAccessService.list_visible_accounts()) and call FamilyChoreService.post_payment() — reusing it unchanged, never selecting accounts silently. Keep the existing 'ready to pay' badge/link as a fallback if no accounts are configured. Respect the existing HEAD/PARENT-only permission gate, idempotency, and RLS/tenant isolation. Add tests for: form renders only for permitted roles, posting through the dashboard creates the same balanced journal entry as the API, repeated submission does not duplicate postings, and full regression."
+> "Implement DB-1107C: Allowance Payment Reversal Dashboard Action. Add a 'Reverse Payment' button (HEAD/PARENT only, hx-confirm prompt) to each 'Paid' item in the dashboard's Recent Payments list (app/templates/dashboard/partials/family_chore_ready_to_pay.html), posting to a new HTMX route in app/routers/dashboard.py that calls FamilyChoreService.reverse_payment() unchanged — no account selection needed. Refresh the whole widget on success (same HX-Retarget/HX-Reswap pattern as DB-1107B's post-payment route). Respect the existing HEAD/PARENT-only permission gate, idempotency (repeated reversal must not duplicate a reversal journal entry), and RLS/tenant isolation. Add tests for: button appears only for HEAD/PARENT, reversal creates a balanced reversing journal entry, repeated reversal does not duplicate it, cannot reverse an unpaid completion, tenant isolation, and full regression."
 
 ---
 

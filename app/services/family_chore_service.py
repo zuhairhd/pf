@@ -719,16 +719,16 @@ class FamilyChoreService:
         completions = list(result.scalars().all())
         return sum((c.earned_amount for c in completions), Decimal("0"))
 
-    async def count_approved_unpaid_completions(self) -> int:
-        """Count approved, unpaid, earned>0 completions visible to the user (FAM-1305).
+    async def list_approved_unpaid_completions_for_user(self) -> list[FamilyChoreCompletion]:
+        """Return approved, unpaid, earned>0 completions visible to the user (FAM-1305/DB-1107B).
 
-        Used by the dashboard's "Ready to pay" badge only — never selects
-        payment/expense accounts itself (see DB-1107B follow-up).
+        Used to populate the dashboard's "ready to pay" list and badge —
+        never used to select payment/expense accounts on its own.
         """
         role = await self.get_role()
         family = await self._get_family()
         if family is None:
-            return 0
+            return []
 
         query = (
             select(FamilyChoreCompletion)
@@ -741,11 +741,47 @@ class FamilyChoreService:
         if not self._is_elevated(role):
             own_member = await self._get_own_member()
             if own_member is None:
-                return 0
+                return []
             query = query.where(FamilyChoreCompletion.completed_by_member_id == own_member.id)
 
-        result = await self.db.execute(query)
-        return len(list(result.scalars().all()))
+        result = await self.db.execute(query.order_by(FamilyChoreCompletion.approved_at.desc()))
+        return list(result.scalars().all())
+
+    async def count_approved_unpaid_completions(self) -> int:
+        """Count approved, unpaid, earned>0 completions visible to the user (FAM-1305)."""
+        return len(await self.list_approved_unpaid_completions_for_user())
+
+    async def list_recent_paid_completions_for_user(self, limit: int = 5) -> list[FamilyChoreCompletion]:
+        """Return the most recently paid/reversed completions visible to the user (DB-1107B).
+
+        Read-only history for the dashboard's "Recent Payments" section —
+        never mutates anything.
+        """
+        role = await self.get_role()
+        family = await self._get_family()
+        if family is None:
+            return []
+
+        query = (
+            select(FamilyChoreCompletion)
+            .where(FamilyChoreCompletion.tenant_id == self.tenant_id)
+            .where(FamilyChoreCompletion.family_id == family.id)
+            .where(
+                FamilyChoreCompletion.payment_status.in_(
+                    [ChorePaymentStatus.PAID.value, ChorePaymentStatus.REVERSED.value]
+                )
+            )
+        )
+        if not self._is_elevated(role):
+            own_member = await self._get_own_member()
+            if own_member is None:
+                return []
+            query = query.where(FamilyChoreCompletion.completed_by_member_id == own_member.id)
+
+        result = await self.db.execute(
+            query.order_by(FamilyChoreCompletion.paid_at.desc()).limit(limit)
+        )
+        return list(result.scalars().all())
 
     # -----------------------------------------------------------------------
     # Dashboard-facing summary (follow-up: DB-1107A Allowance/Chore Dashboard Widget)

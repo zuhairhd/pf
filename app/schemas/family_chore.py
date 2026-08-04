@@ -176,6 +176,36 @@ class DashboardCompletionItem(BaseModel):
     can_reject: bool = False
 
 
+class DashboardAccountOption(BaseModel):
+    id: int
+    code: str
+    name: str
+
+
+class DashboardReadyToPayItem(BaseModel):
+    id: int
+    chore_id: int
+    chore_title: str
+    member_id: int
+    member_name: Optional[str] = None
+    earned_amount: Decimal
+    currency: str
+    approved_at: Optional[datetime] = None
+    can_pay: bool = False
+
+
+class DashboardPaymentHistoryItem(BaseModel):
+    id: int
+    chore_title: str
+    member_name: Optional[str] = None
+    earned_amount: Decimal
+    currency: str
+    payment_status: str
+    payment_journal_entry_id: Optional[int] = None
+    payment_reversal_journal_entry_id: Optional[int] = None
+    paid_at: Optional[datetime] = None
+
+
 class DashboardAllowanceMemberBreakdown(BaseModel):
     member_id: int
     member_name: str
@@ -203,6 +233,8 @@ class FamilyChoresDashboardResponse(BaseModel):
     assigned_chores: List[DashboardChoreItem]
     overdue_chores: List[DashboardChoreItem]
     pending_approvals: List[DashboardCompletionItem]
+    ready_to_pay: List[DashboardReadyToPayItem] = []
+    recent_payments: List[DashboardPaymentHistoryItem] = []
     allowance_summary: DashboardAllowanceSummary
     due_soon_count: int
     overdue_count: int
