@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.core.security import (
     get_db_with_tenant_context,
     require_active_user,
@@ -14,6 +16,7 @@ from app.core.security import (
 )
 from app.imports.models import ImportJob, ImportedRow
 from app.imports.schemas import (
+    ColumnMapping,
     CSVUploadRequest,
     ImportConfirmRequest,
     ImportConfirmResponse,
@@ -105,6 +108,74 @@ async def parse_sms(
             user=user,
             original_filename=payload.original_filename,
             sms_text=payload.sms_text,
+        )
+    except ImportServiceError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+
+    rows = await service.get_job_rows(job.id, limit=1000)
+    return ImportPreviewResponse(
+        job_id=job.id,
+        summary=_to_summary(job),
+        rows=[_to_parsed_row(r) for r in rows],
+    )
+
+
+@router.post("/excel/upload", response_model=ImportPreviewResponse)
+async def upload_excel(
+    file: UploadFile = File(...),
+    sheet_name: Optional[str] = Form(None),
+    mapping: Optional[str] = Form(None),
+    default_account_id: Optional[int] = Form(None),
+    default_currency: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Upload and preview an Excel (.xlsx) workbook.
+
+    Only the .xlsx format is supported (legacy .xls is not). The file is read
+    entirely in memory with openpyxl in read-only, data-only mode and is never
+    written to disk -- formulas and macros are never executed, only cached
+    cell values are read.
+    """
+    original_name = Path(file.filename or "").name.strip()
+    if not original_name.lower().endswith(".xlsx"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Only .xlsx Excel files are supported. "
+                "Legacy .xls workbooks are not supported."
+            ),
+        )
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    settings = get_settings()
+    max_size = settings.DOCUMENT_MAX_UPLOAD_MB * 1024 * 1024
+    if len(content) > max_size:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds maximum size of {settings.DOCUMENT_MAX_UPLOAD_MB} MB",
+        )
+
+    mapping_hint = ColumnMapping()
+    if mapping:
+        try:
+            mapping_hint = ColumnMapping.model_validate_json(mapping)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid mapping JSON") from exc
+
+    service = ImportService(db, tenant_id=user.organization_id)
+    try:
+        job = await service.create_excel_job(
+            user=user,
+            original_filename=original_name or "workbook.xlsx",
+            file_content=content,
+            sheet_name=sheet_name or None,
+            mapping_hint=mapping_hint,
+            default_account_id=default_account_id,
+            default_currency=default_currency,
         )
     except ImportServiceError as exc:
         raise HTTPException(status_code=400, detail=exc.message) from exc

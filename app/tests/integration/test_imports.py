@@ -7,24 +7,35 @@ confirmed journal-entry creation.
 from __future__ import annotations
 
 import base64
+import io
 import os
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
+import openpyxl
 import pytest
 from sqlalchemy import select, text
 
 from app.imports.parsers.csv_parser import CSVParser, compute_file_hash, parse_csv_import
+from app.imports.parsers.excel_parser import (
+    ExcelParseError,
+    ExcelParser,
+    compute_excel_hash,
+    parse_excel_import,
+)
 from app.imports.parsers.sms_parser import (
     compute_sms_hash,
     parse_sms,
     parse_sms_messages,
 )
 from app.imports.schemas import ColumnMapping
+from app.models import Family, FamilyRole
 from app.tests.helpers import (
     assert_rls_enabled,
     auth_headers_for,
+    create_test_account,
+    create_test_family_member,
     create_test_organization,
     create_test_user,
 )
@@ -674,3 +685,560 @@ async def test_confirm_sms_skips_invalid_and_duplicate_rows(
     )
     entries = result.scalars().all()
     assert len(entries) == 1
+
+
+# ---------------------------------------------------------------------------
+# Excel (.xlsx) parser unit tests
+#
+# Workbooks are generated in-memory with openpyxl -- no real bank statements
+# or committed binary fixtures are used.
+# ---------------------------------------------------------------------------
+
+
+def _build_xlsx(rows: list[list], headers: list[str], sheet_name: str = "Sheet1") -> bytes:
+    """Build a fake .xlsx workbook in memory and return its bytes."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = sheet_name
+    ws.append(headers)
+    for row in rows:
+        ws.append(row)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _file_tuple(name: str, content: bytes):
+    return (
+        name,
+        io.BytesIO(content),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.anyio
+async def test_excel_parser_handles_xlsx_workbook():
+    """A basic .xlsx workbook with a single amount column parses correctly."""
+    content = _build_xlsx(
+        [[date(2026, 7, 1), "Salary deposit", 1500.0]],
+        ["Date", "Description", "Amount"],
+    )
+    result = parse_excel_import(content)
+    assert result["headers"] == ["Date", "Description", "Amount"]
+    assert result["total_rows"] == 1
+    assert result["rows"][0].status == "valid"
+    assert result["rows"][0].parsed_data["description"] == "Salary deposit"
+
+
+@pytest.mark.unit
+@pytest.mark.anyio
+async def test_excel_parser_parses_date_cells():
+    """Native Excel date cells (not strings) are parsed correctly."""
+    content = _build_xlsx(
+        [[date(2026, 7, 5), "Test", -12.5]],
+        ["Date", "Description", "Amount"],
+    )
+    result = parse_excel_import(content)
+    assert result["rows"][0].parsed_data["date"] == "2026-07-05"
+
+
+@pytest.mark.unit
+@pytest.mark.anyio
+async def test_excel_parser_handles_debit_credit_columns():
+    """Debit/credit columns resolve to signed amounts."""
+    content = _build_xlsx(
+        [
+            [date(2026, 7, 1), "Salary", None, 1500.0],
+            [date(2026, 7, 2), "Grocery store", 45.5, None],
+        ],
+        ["Date", "Description", "Debit", "Credit"],
+    )
+    result = parse_excel_import(content)
+    by_description = {r.parsed_data["description"]: r for r in result["rows"]}
+
+    salary = by_description["Salary"]
+    assert salary.status == "valid"
+    assert Decimal(salary.parsed_data["amount_decimal"]) == Decimal("1500")
+    assert salary.parsed_data["transaction_type"] == "income"
+
+    grocery = by_description["Grocery store"]
+    assert grocery.status == "valid"
+    assert Decimal(grocery.parsed_data["amount_decimal"]) == Decimal("-45.5")
+    assert grocery.parsed_data["transaction_type"] == "expense"
+
+
+@pytest.mark.unit
+@pytest.mark.anyio
+async def test_excel_parser_handles_negative_amount_column():
+    """A negative value in a single amount column is treated as an expense."""
+    content = _build_xlsx(
+        [
+            [date(2026, 7, 1), "Salary deposit", 1500.0],
+            [date(2026, 7, 2), "Grocery store", -45.5],
+        ],
+        ["Date", "Description", "Amount"],
+    )
+    result = parse_excel_import(content)
+    rows = {r.parsed_data["description"]: r for r in result["rows"]}
+    assert rows["Salary deposit"].parsed_data["transaction_type"] == "income"
+    assert rows["Grocery store"].parsed_data["transaction_type"] == "expense"
+    assert Decimal(rows["Grocery store"].parsed_data["amount_decimal"]) == Decimal("-45.5")
+
+
+@pytest.mark.unit
+@pytest.mark.anyio
+async def test_excel_parser_skips_blank_rows():
+    """Fully blank rows between data rows are skipped, not treated as invalid."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Date", "Description", "Amount"])
+    ws.append([date(2026, 7, 1), "Salary", 1500.0])
+    ws.append([None, None, None])
+    ws.append([date(2026, 7, 2), "Rent", -300.0])
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    result = parse_excel_import(buf.getvalue())
+    assert result["total_rows"] == 2
+    assert all(r.status == "valid" for r in result["rows"])
+
+
+@pytest.mark.unit
+@pytest.mark.anyio
+async def test_excel_parser_invalid_rows_are_captured():
+    """Rows missing date, description, or a non-zero amount are invalid."""
+    content = _build_xlsx(
+        [
+            [None, "No date", 10.0],
+            [date(2026, 7, 1), "", 10.0],
+            [date(2026, 7, 1), "Zero amount", 0],
+        ],
+        ["Date", "Description", "Amount"],
+    )
+    result = parse_excel_import(content)
+    assert result["total_rows"] == 3
+    assert result["valid_rows"] == 0
+    assert result["invalid_rows"] == 3
+    errors = [e for r in result["rows"] for e in r.validation_errors]
+    assert any("date" in e.lower() for e in errors)
+    assert any("description" in e.lower() for e in errors)
+    assert any("non-zero" in e.lower() for e in errors)
+
+
+@pytest.mark.unit
+@pytest.mark.anyio
+async def test_excel_parser_duplicate_rows_detected():
+    """Identical rows are flagged as duplicates."""
+    content = _build_xlsx(
+        [
+            [date(2026, 7, 1), "Coffee", -2.5],
+            [date(2026, 7, 1), "Coffee", -2.5],
+        ],
+        ["Date", "Description", "Amount"],
+    )
+    parser = ExcelParser(content)
+    result = parser.parse()
+    assert result["rows"][0].status == "valid"
+    assert result["rows"][1].status == "valid"
+    assert result["rows"][1].duplicate_key == result["rows"][0].duplicate_key
+
+
+@pytest.mark.unit
+@pytest.mark.anyio
+async def test_excel_parser_rejects_unknown_sheet_name():
+    """Requesting a worksheet that does not exist raises a safe error."""
+    content = _build_xlsx(
+        [[date(2026, 7, 1), "Test", 10.0]],
+        ["Date", "Description", "Amount"],
+        sheet_name="Statement",
+    )
+    parser = ExcelParser(content, sheet_name="DoesNotExist")
+    with pytest.raises(ExcelParseError):
+        parser.parse()
+
+
+@pytest.mark.unit
+@pytest.mark.anyio
+async def test_excel_parser_rejects_non_xlsx_bytes():
+    """Non-workbook bytes (e.g. plain text) raise a safe parse error, not a crash."""
+    parser = ExcelParser(b"this is not a real xlsx workbook")
+    with pytest.raises(ExcelParseError):
+        parser.parse()
+
+
+@pytest.mark.unit
+@pytest.mark.anyio
+async def test_excel_parser_selects_named_sheet():
+    """An explicit sheet_name selects that worksheet instead of the first one."""
+    wb = openpyxl.Workbook()
+    ws1 = wb.active
+    ws1.title = "Summary"
+    ws1.append(["Not", "Transaction", "Data"])
+    ws2 = wb.create_sheet("Transactions")
+    ws2.append(["Date", "Description", "Amount"])
+    ws2.append([date(2026, 7, 1), "Salary", 1500.0])
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    parser = ExcelParser(buf.getvalue(), sheet_name="Transactions")
+    result = parser.parse()
+    assert result["sheet_name"] == "Transactions"
+    assert result["rows"][0].parsed_data["description"] == "Salary"
+
+
+# ---------------------------------------------------------------------------
+# Excel import integration tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_excel_upload_requires_auth(client):
+    """Anonymous users cannot upload Excel files."""
+    content = _build_xlsx(
+        [[date(2026, 7, 1), "Salary", 1500.0]],
+        ["Date", "Description", "Amount"],
+    )
+    response = await client.post(
+        "/imports/excel/upload",
+        files={"file": _file_tuple("statement.xlsx", content)},
+    )
+    assert response.status_code in (401, 403)
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_excel_upload_creates_job_and_rows(client, auth_headers):
+    """An authenticated tenant user can upload an .xlsx file and receive a preview."""
+    content = _build_xlsx(
+        [
+            [date(2026, 7, 1), "Salary deposit", 1500.0],
+            [date(2026, 7, 2), "Grocery store", -45.5],
+        ],
+        ["Date", "Description", "Amount"],
+    )
+    response = await client.post(
+        "/imports/excel/upload",
+        files={"file": _file_tuple("statement.xlsx", content)},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert "job_id" in data
+    assert data["summary"]["import_type"] == "excel"
+    assert data["summary"]["total_rows"] == 2
+    assert data["summary"]["valid_rows"] == 2
+    assert len(data["rows"]) == 2
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_excel_upload_with_sheet_name_and_mapping(client, auth_headers):
+    """An explicit sheet_name and mapping hint are honored on upload."""
+    wb = openpyxl.Workbook()
+    ws1 = wb.active
+    ws1.title = "Summary"
+    ws1.append(["irrelevant"])
+    ws2 = wb.create_sheet("Statement")
+    ws2.append(["Txn Date", "Notes", "Value"])
+    ws2.append([date(2026, 7, 3), "Bonus", 250.0])
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    response = await client.post(
+        "/imports/excel/upload",
+        data={
+            "sheet_name": "Statement",
+            "mapping": '{"date": "Txn Date", "description": "Notes", "amount": "Value"}',
+        },
+        files={"file": _file_tuple("multi_sheet.xlsx", buf.getvalue())},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["summary"]["total_rows"] == 1
+    assert data["rows"][0]["parsed_data"]["description"] == "Bonus"
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_excel_upload_detects_duplicate_rows(client, auth_headers):
+    """Uploading a workbook with duplicate rows marks the second as duplicate."""
+    content = _build_xlsx(
+        [
+            [date(2026, 7, 1), "Coffee", -2.5],
+            [date(2026, 7, 1), "Coffee", -2.5],
+        ],
+        ["Date", "Description", "Amount"],
+    )
+    response = await client.post(
+        "/imports/excel/upload",
+        files={"file": _file_tuple("dupes.xlsx", content)},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["summary"]["total_rows"] == 2
+    assert data["summary"]["valid_rows"] == 1
+    assert data["summary"]["duplicate_rows"] == 1
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_excel_upload_rejects_unsupported_extension(client, auth_headers):
+    """A non-.xlsx file (e.g. legacy .xls or plain text) is rejected safely."""
+    response = await client.post(
+        "/imports/excel/upload",
+        files={"file": _file_tuple("statement.xls", b"not a real xls file")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 400
+    assert "xlsx" in response.text.lower()
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_excel_upload_rejects_corrupted_workbook(client, auth_headers):
+    """A file named .xlsx but containing garbage bytes is rejected safely, not a 500."""
+    response = await client.post(
+        "/imports/excel/upload",
+        files={"file": _file_tuple("statement.xlsx", b"this is not a real workbook")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_tenant_cannot_see_other_tenant_excel_job(client, db, unique):
+    """Tenant A's Excel import job is invisible to a user from Tenant B."""
+    org_a = await create_test_organization(db, name=unique("Org A"), slug=unique("org-a"))
+    org_b = await create_test_organization(db, name=unique("Org B"), slug=unique("org-b"))
+    user_a, password_a = await create_test_user(db, org_a)
+    user_b, password_b = await create_test_user(db, org_b)
+
+    headers_a = await auth_headers_for(client, user_a.email, password_a)
+    headers_b = await auth_headers_for(client, user_b.email, password_b)
+
+    content = _build_xlsx(
+        [[date(2026, 7, 1), "Salary", 1500.0]],
+        ["Date", "Description", "Amount"],
+    )
+    upload_response = await client.post(
+        "/imports/excel/upload",
+        files={"file": _file_tuple("statement.xlsx", content)},
+        headers=headers_a,
+    )
+    assert upload_response.status_code == 200
+    job_id = upload_response.json()["job_id"]
+
+    response_b = await client.get(f"/imports/{job_id}", headers=headers_b)
+    assert response_b.status_code == 404
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_rls_active_on_import_tables_for_excel_jobs(db):
+    """RLS/FORCE RLS remains active on the shared import tables used by Excel jobs."""
+    await assert_rls_enabled(db, "import_jobs")
+    await assert_rls_enabled(db, "imported_rows")
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_confirm_excel_posts_valid_rows_to_journal_entries(
+    client, auth_headers, test_user, db, tenant_context
+):
+    """Confirming an Excel import creates journal entries for valid rows, exactly
+    like the existing CSV/SMS confirm flow."""
+    accounts = [
+        {"code": "BANK", "name": "Bank Muscat", "account_type": "Asset", "is_bank_account": True},
+        {"code": "SAL", "name": "Salary", "account_type": "Income"},
+        {"code": "GRO", "name": "Food & Groceries", "account_type": "Expense"},
+    ]
+    created_accounts = []
+    for account in accounts:
+        response = await client.post("/accounts/", json=account, headers=auth_headers)
+        assert response.status_code == 200, response.text
+        created_accounts.append(response.json())
+
+    bank_account = next(a for a in created_accounts if a["code"] == "BANK")
+    income_account = next(a for a in created_accounts if a["code"] == "SAL")
+    expense_account = next(a for a in created_accounts if a["code"] == "GRO")
+
+    content = _build_xlsx(
+        [
+            [date(2026, 7, 1), "Salary deposit", 1500.0],
+            [date(2026, 7, 2), "Grocery store", -45.5],
+        ],
+        ["Date", "Description", "Amount"],
+    )
+    upload_response = await client.post(
+        "/imports/excel/upload",
+        files={"file": _file_tuple("statement.xlsx", content)},
+        headers=auth_headers,
+    )
+    assert upload_response.status_code == 200, upload_response.text
+    job_id = upload_response.json()["job_id"]
+
+    confirm_payload = {
+        "bank_account_id": bank_account["id"],
+        "default_income_account_id": income_account["id"],
+        "default_expense_account_id": expense_account["id"],
+        "import_duplicates": False,
+    }
+    confirm_response = await client.post(
+        f"/imports/{job_id}/confirm",
+        json=confirm_payload,
+        headers=auth_headers,
+    )
+    assert confirm_response.status_code == 200, confirm_response.text
+    confirm_data = confirm_response.json()
+    assert confirm_data["status"] == "completed"
+    assert confirm_data["imported_rows"] == 2
+
+    from app.models import JournalEntry
+
+    await tenant_context(test_user.organization_id)
+    result = await db.execute(
+        select(JournalEntry)
+        .where(JournalEntry.tenant_id == test_user.organization_id)
+        .where(JournalEntry.source == "import")
+    )
+    entries = result.scalars().all()
+    assert len(entries) == 2
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_confirm_excel_skips_invalid_and_duplicate_rows(
+    client, auth_headers, test_user, db, tenant_context
+):
+    """Only valid, non-duplicate Excel rows are posted; invalid/duplicate rows
+    are skipped, matching CSV/SMS confirm behavior exactly."""
+    accounts = [
+        {"code": "BANK", "name": "Bank Muscat", "account_type": "Asset", "is_bank_account": True},
+        {"code": "GRO", "name": "Food & Groceries", "account_type": "Expense"},
+    ]
+    created_accounts = []
+    for account in accounts:
+        response = await client.post("/accounts/", json=account, headers=auth_headers)
+        assert response.status_code == 200, response.text
+        created_accounts.append(response.json())
+
+    bank_account = next(a for a in created_accounts if a["code"] == "BANK")
+    expense_account = next(a for a in created_accounts if a["code"] == "GRO")
+
+    content = _build_xlsx(
+        [
+            [date(2026, 7, 1), "Coffee", -2.5],
+            [date(2026, 7, 1), "Coffee", -2.5],  # duplicate
+            [None, "Missing date", -5.0],  # invalid
+        ],
+        ["Date", "Description", "Amount"],
+    )
+    upload_response = await client.post(
+        "/imports/excel/upload",
+        files={"file": _file_tuple("mixed.xlsx", content)},
+        headers=auth_headers,
+    )
+    assert upload_response.status_code == 200, upload_response.text
+    job_id = upload_response.json()["job_id"]
+    summary = upload_response.json()["summary"]
+    assert summary["valid_rows"] == 1
+    assert summary["duplicate_rows"] == 1
+    assert summary["invalid_rows"] == 1
+
+    confirm_payload = {
+        "bank_account_id": bank_account["id"],
+        "default_income_account_id": None,
+        "default_expense_account_id": expense_account["id"],
+        "import_duplicates": False,
+    }
+    confirm_response = await client.post(
+        f"/imports/{job_id}/confirm",
+        json=confirm_payload,
+        headers=auth_headers,
+    )
+    assert confirm_response.status_code == 200, confirm_response.text
+    confirm_data = confirm_response.json()
+    assert confirm_data["imported_rows"] == 1
+
+    from app.models import JournalEntry
+
+    await tenant_context(test_user.organization_id)
+    result = await db.execute(
+        select(JournalEntry)
+        .where(JournalEntry.tenant_id == test_user.organization_id)
+        .where(JournalEntry.source == "import")
+    )
+    entries = result.scalars().all()
+    assert len(entries) == 1
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_excel_import_account_visibility_enforced(client, db, unique):
+    """A non-elevated family member cannot post Excel-imported rows against a
+    private bank account they do not own."""
+    from app.core.rls import set_tenant_context_async
+
+    org = await create_test_organization(db, name=unique("VisOrg"), slug=unique("vis-org"))
+    await set_tenant_context_async(db, org.id)
+    head, _ = await create_test_user(db, org, email=unique("head") + "@example.com", role="owner")
+    viewer, viewer_password = await create_test_user(
+        db, org, email=unique("viewer") + "@example.com", role="viewer"
+    )
+
+    family = Family(tenant_id=org.id, name=unique("Family"), currency="OMR")
+    db.add(family)
+    await db.flush()
+    await db.refresh(family)
+    await create_test_family_member(db, family.id, org.id, head, FamilyRole.HEAD.value)
+    await create_test_family_member(db, family.id, org.id, viewer, FamilyRole.VIEWER.value)
+    await db.commit()
+
+    private_bank = await create_test_account(
+        db,
+        org.id,
+        code=unique("BANK"),
+        name="Head's Private Bank",
+        account_type="Asset",
+        visibility="private",
+        owner_user_id=head.id,
+    )
+    expense = await create_test_account(
+        db, org.id, code=unique("GRO"), name="Groceries", account_type="Expense"
+    )
+
+    viewer_headers = await auth_headers_for(client, viewer.email, viewer_password)
+
+    content = _build_xlsx(
+        [[date(2026, 7, 1), "Grocery store", -20.0]],
+        ["Date", "Description", "Amount"],
+    )
+    upload_response = await client.post(
+        "/imports/excel/upload",
+        files={"file": _file_tuple("statement.xlsx", content)},
+        headers=viewer_headers,
+    )
+    assert upload_response.status_code == 200, upload_response.text
+    job_id = upload_response.json()["job_id"]
+
+    confirm_payload = {
+        "bank_account_id": private_bank.id,
+        "default_income_account_id": None,
+        "default_expense_account_id": expense.id,
+        "import_duplicates": False,
+    }
+    confirm_response = await client.post(
+        f"/imports/{job_id}/confirm",
+        json=confirm_payload,
+        headers=viewer_headers,
+    )
+    assert confirm_response.status_code == 200, confirm_response.text
+    confirm_data = confirm_response.json()
+    # The row is skipped (not imported) because the viewer cannot post
+    # against the head's private bank account -- confirmed by row count.
+    assert confirm_data["imported_rows"] == 0

@@ -13,6 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.imports.models import ImportJob, ImportedRow
 from app.imports.parsers.csv_parser import CSVParser, compute_file_hash
+from app.imports.parsers.excel_parser import (
+    ExcelParseError,
+    ExcelParser,
+    compute_excel_hash,
+)
 from app.imports.parsers.sms_parser import compute_sms_hash, parse_sms_messages
 from app.imports.schemas import ColumnMapping, ImportConfirmRequest
 from app.models import Account, JournalEntry, JournalLine, User
@@ -177,6 +182,111 @@ class ImportService:
                 parsed_data=parsed_sms.to_dict(),
                 validation_errors=parsed_sms.validation_errors,
                 duplicate_key=duplicate_key,
+                duplicate_of_row_id=None,
+                status=status,
+            )
+            self.db.add(row_record)
+            imported_rows.append(row_record)
+
+        await self.db.flush()
+
+        # Update duplicate_of references now that IDs are known.
+        key_to_id: dict[str, int] = {}
+        for row_record in imported_rows:
+            if row_record.status == "valid" and row_record.duplicate_key:
+                key_to_id[row_record.duplicate_key] = row_record.id
+
+        duplicate_count = 0
+        for row_record in imported_rows:
+            if row_record.status == "duplicate" and row_record.duplicate_key:
+                row_record.duplicate_of_row_id = key_to_id.get(row_record.duplicate_key)
+                duplicate_count += 1
+
+        job.duplicate_rows = duplicate_count
+        job.valid_rows = sum(1 for r in imported_rows if r.status == "valid")
+
+        await self.db.commit()
+        await self.db.refresh(job)
+        return job
+
+    async def create_excel_job(
+        self,
+        *,
+        user: User,
+        original_filename: str,
+        file_content: bytes,
+        sheet_name: Optional[str] = None,
+        mapping_hint: Optional[ColumnMapping] = None,
+        default_account_id: Optional[int] = None,
+        default_currency: Optional[str] = None,
+    ) -> ImportJob:
+        """Parse an Excel (.xlsx) workbook and create an import job with imported rows."""
+        parser = ExcelParser(file_content, mapping_hint, sheet_name=sheet_name)
+        try:
+            result = parser.parse()
+        except ExcelParseError as exc:
+            raise ImportServiceError(str(exc)) from exc
+
+        file_hash = compute_excel_hash(file_content)
+        currency_default = (default_currency or "OMR").strip().upper()[:3] or "OMR"
+
+        mapping_to_store: dict[str, Any] = dict(result["mapping"])
+        if result.get("sheet_name"):
+            mapping_to_store["_sheet_name"] = result["sheet_name"]
+
+        job = ImportJob(
+            tenant_id=self.tenant_id,
+            user_id=user.id,
+            import_type="excel",
+            status="preview",
+            original_filename=original_filename,
+            file_hash=file_hash,
+            mapping=mapping_to_store,
+            total_rows=result["total_rows"],
+            valid_rows=result["valid_rows"],
+            invalid_rows=result["invalid_rows"],
+            duplicate_rows=0,
+            imported_rows=0,
+            errors=[],
+        )
+        self.db.add(job)
+        await self.db.flush()
+        await self.db.refresh(job)
+
+        # Build imported row records and detect duplicates within the workbook.
+        duplicate_keys: dict[str, int] = {}
+        imported_rows: list[ImportedRow] = []
+
+        for parsed_row in result["rows"]:
+            status = parsed_row.status
+            parsed_data = dict(parsed_row.parsed_data)
+
+            if not parsed_data.get("currency"):
+                parsed_data["currency"] = currency_default
+            if (
+                default_account_id
+                and not parsed_data.get("account")
+                and not parsed_data.get("category")
+            ):
+                parsed_data["default_account_id"] = default_account_id
+
+            duplicate_of: Optional[int] = None
+            if status == "valid":
+                dup_key = parsed_row.duplicate_key
+                if dup_key in duplicate_keys:
+                    status = "duplicate"
+                    duplicate_of = duplicate_keys[dup_key]
+                else:
+                    duplicate_keys[dup_key] = 0  # placeholder, updated after insert
+
+            row_record = ImportedRow(
+                tenant_id=self.tenant_id,
+                import_job_id=job.id,
+                row_number=parsed_row.row_number,
+                raw_data=parsed_row.raw_data,
+                parsed_data=parsed_data,
+                validation_errors=parsed_row.validation_errors,
+                duplicate_key=parsed_row.duplicate_key if parsed_row.duplicate_key else None,
                 duplicate_of_row_id=None,
                 status=status,
             )
@@ -388,6 +498,14 @@ class ImportService:
         category_value = parsed.get("category") or parsed.get("account")
         if category_value:
             account = await self._find_account(category_value)
+            if account:
+                return account
+
+        # A per-row default account supplied at Excel upload time (used when
+        # the row has no account/category column value of its own).
+        row_default_id = parsed.get("default_account_id")
+        if row_default_id:
+            account = await self._get_account(row_default_id)
             if account:
                 return account
 

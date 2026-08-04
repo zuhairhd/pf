@@ -10,9 +10,9 @@
 
 ## Executive Summary
 
-Cards PF-014-DB through REP-2000 (Basic Financial Reports), REP-2001 (Financial Reports UI / Report Center), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), AI-1222 (AI Confidence Scoring), AI-1223 (Dashboard v2), FAM-1303 (Family Budgets), DB-1106A (Family Budget Dashboard Widget UI), FAM-1304 (Allowance and Chore Tracking), DB-1107A (Allowance and Chore Dashboard Widget UI), FAM-1305 (Allowance Payment Posting Through Accounting Engine), DB-1107B (Allowance Payment Dashboard Action Form), and DB-1107C (Allowance Payment Reversal Dashboard Action) are **COMPLETE**. The database has 46 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and the dashboard is the AI-centric "Today" landing page — surfacing health score, proactive alerts, confidence-aware recommendations, optimizer shortcuts, commitments, family goals, permission-aware family budgets, and permission-aware chores/allowance. The full allowance lifecycle — chore → completion → approval → posted payment → reversal — is available both via API and dashboard, and users can now view Income Statement, Balance Sheet, Cash Flow, Net Worth, and Expense Analysis reports directly in the browser (REP-2001), with date filters and empty states, on top of the unchanged REP-2000 report engine.
+Cards PF-014-DB through REP-2000 (Basic Financial Reports), REP-2001 (Financial Reports UI / Report Center), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), AI-1222 (AI Confidence Scoring), AI-1223 (Dashboard v2), FAM-1303 (Family Budgets), DB-1106A (Family Budget Dashboard Widget UI), FAM-1304 (Allowance and Chore Tracking), DB-1107A (Allowance and Chore Dashboard Widget UI), FAM-1305 (Allowance Payment Posting Through Accounting Engine), DB-1107B (Allowance Payment Dashboard Action Form), DB-1107C (Allowance Payment Reversal Dashboard Action), and IMP-701 (Excel Import) are **COMPLETE**. The database has 46 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and the dashboard is the AI-centric "Today" landing page — surfacing health score, proactive alerts, confidence-aware recommendations, optimizer shortcuts, commitments, family goals, permission-aware family budgets, and permission-aware chores/allowance. The full allowance lifecycle — chore → completion → approval → posted payment → reversal — is available both via API and dashboard, users can view Income Statement, Balance Sheet, Cash Flow, Net Worth, and Expense Analysis reports directly in the browser (REP-2001), and the import pipeline now supports CSV, SMS, and Excel (`.xlsx`) sources, all sharing the same preview/validate/de-duplicate/confirm-to-journal-entry flow.
 
-The next card should be **IMP-701 — Excel Import**, the last unclaimed piece of the original manual/CSV/SMS/Excel import plan — CSV and SMS are already done; Excel import can reuse the entire existing import pipeline's preview/confirm/safety pattern.
+The next card should be **IMP-703 — Import UI**, the last unclaimed piece of the import strategy — CSV, SMS, and Excel import are all done at the API level, but there is still no user-facing page to upload a file, review the preview, and confirm it into the ledger.
 
 ---
 
@@ -961,15 +961,37 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 40
+
+### Card 40: IMP-701 — Excel Import ✅ DONE
+
+**PLAN_V2 Reference:** PF-008 (Import Strategy) + IMP-701 (Excel Import)
+**Type:** Feature / Imports
+**Priority:** MEDIUM
+
+**Completed:**
+- Added `app/imports/parsers/excel_parser.py` (`ExcelParser`), reusing the CSV parser's column-alias detection (`_detect_mapping`) and duplicate-key logic (`_build_duplicate_key`) directly rather than duplicating them.
+- Added `POST /imports/excel/upload` (multipart: file, optional `sheet_name`, `mapping`, `default_account_id`, `default_currency`). All other import routes (get job, get rows, confirm, cancel) are unchanged and work identically for Excel jobs.
+- `import_type = "excel"` needed no migration — `ImportJob.import_type` is already a free-form `String(20)` column. Alembic head unchanged at `bd89e4fcf4b9`.
+- Confirm-to-accounting fully reused: Excel rows post through the same `AccountingService.create_journal_entry` path as CSV/SMS.
+- `openpyxl` (already a dependency) is used in `read_only=True, data_only=True` mode — formulas/macros never execute, the file is parsed in memory and never written to disk, and only `.xlsx` is accepted.
+- 21 new tests; full suite **645 passed, 1 skipped** (up from 624 passed, 1 skipped), zero regressions.
+
+**Remaining:**
+- Legacy `.xls` is not supported.
+- No import UI yet — tracked as IMP-703 below.
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 40: IMP-701 — Excel Import
+### Card 41: IMP-703 — Import UI
 
-**Decision:** `PLAN_V2_CARD_STATUS.md` lists CSV import and SMS bank-alert parsing as already **Done** (`app/imports/`), but Excel import (`IMP-701`) is still **Missing** — the last unclaimed piece of the original three-format import plan (manual/CSV/SMS were built; Excel was explicitly deferred at that time). With reports now able to visualize posted data end-to-end (REP-2000 → REP-2001), giving users an easy way to *get* their transaction history into the ledger in the first place — via the spreadsheet format most people already have their bank/budget data in — is the next well-scoped, high-value gap, and it can reuse the entire existing CSV import pipeline's preview/confirm/account-mapping/safety pattern almost unchanged.
+**Decision:** With CSV (IMP-700), SMS (IMP-702), and now Excel (IMP-701) import all complete and sharing one preview/validate/de-duplicate/confirm pipeline, the only remaining gap in the import strategy (PF-008) is that none of it is reachable from the browser — users must call the API directly. `PLAN_V2_CARD_STATUS.md` already lists `IMP-703` (Import UI Refinements) as **Missing**. This mirrors exactly how REP-2001 followed REP-2000: the underlying engine/API is solid, and the next well-scoped step is a thin, read/write-safe UI layer on top of it, following the same HTMX/Bootstrap conventions and page structure already established by the Report Center.
 
-**What to tell the coding agent for IMP-701:**
+**What to tell the coding agent for IMP-703:**
 
-> "Implement IMP-701: Excel Import. Add an Excel (.xlsx) parser alongside the existing CSV import pipeline in app/imports/ — reuse the same ImportJob model, upload/preview/confirm flow, and account-mapping/visibility safety checks already built for CSV import (do not duplicate the confirm/posting logic). Parse .xlsx files (openpyxl or similar) into the same row structure the CSV parser already produces, so the rest of the pipeline (preview, column mapping, confirm, journal-entry posting via AccountingService) needs no changes. Handle common real-world Excel quirks (multiple sheets — pick the first or let the user choose; header row detection; date/number cell formats) with clear, safe error messages rather than crashing. Respect tenant scoping, RLS, and account-access checks exactly as CSV import already does. Add tests for: successful .xlsx upload/preview/confirm, multi-sheet handling, malformed/empty file rejection, tenant isolation, and full regression."
+> "Implement IMP-703: Import UI. Add a user-facing import page (e.g. GET /imports) on top of the existing, unchanged app/imports/ pipeline (CSV upload, SMS paste, Excel upload, preview, confirm, cancel) — do not duplicate or modify any parser, validation, duplicate-detection, or confirm/posting logic. The page should let a user pick an import source (CSV file / SMS paste / Excel file), upload or paste it, see the preview (valid/invalid/duplicate row counts and a row table with validation errors), choose the bank account and default income/expense accounts, and confirm the import into journal entries — followed by a clear success/error summary. Follow the project's existing HTMX/Bootstrap conventions (see app/templates/reports/ and app/templates/dashboard/ for the established pattern) so the preview can refresh without a full page reload where practical; server-rendered fallback pages are acceptable if HTMX round-trips get too complex, with the limitation documented. All routes must require auth + tenant membership and use get_db_with_tenant_context, exactly like every other import/report route. Add tests for: page auth, rendering the preview for each import source, confirm/cancel from the UI, and tenant isolation."
 
 ---
 

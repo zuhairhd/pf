@@ -20,7 +20,7 @@
 | PF-005 | Define AI CFO Safety Rules | **Done** | `app/ai_cfo/llm/safety.py` exists with disclaimer injection, content filtering, and prompt wrapping | Rule-based engines still need safety wrapper calls | Wrap remaining rule-based engines with `LLMSafety` |
 | PF-006 | Define User Navigation Around Financial Life | **Partial** | Templates exist for dashboard, accounts, budgets, goals, loans, ai, transactions | Navigation not reorganized around "Today", "This Month", "Cash Flow" per PLAN_V2.md | Restructure nav in `base.html` |
 | PF-007 | Define Normal User View vs Accountant View | **Partial** | Accounts router shows COA; no accountant toggle | No "Accountant View" mode, no hidden accounting | Add view mode toggle and hide COA from normal users |
-| PF-008 | Define Import Strategy (Manual, CSV, Excel, SMS) | **Done** | `app/imports/` module created, CSV + SMS parsers, upload/preview/confirm endpoints, Alembic `9ee380da96d5` | Excel parser not yet implemented | Implement IMP-701 (Excel) |
+| PF-008 | Define Import Strategy (Manual, CSV, Excel, SMS) | **Done** | `app/imports/` module created, CSV + SMS + Excel parsers, upload/preview/confirm endpoints, Alembic `9ee380da96d5` | No import UI (API only) | Implement IMP-703 (Import UI) |
 | PF-009 | Define MVP User Journey | **Unknown** | No documentation found | No user journey document | Write `docs/product/mvp-journey.md` |
 | PF-010 | Define Family Finance Model | **Partial** | `Family`, `FamilyMember`, and family-scoped `Goal` models exist with roles, shared/private account logic, and goal visibility | Allowance/chore tracking, family dashboard not implemented | Continue with DB-1105A+ |
 | PF-011 | Write PLAN_V2.md | **Done** | `PLAN_V2.md` exists at project root | — | — |
@@ -82,7 +82,7 @@
 |------------|------|---------------|
 | TRX-600 to TRX-605 | Transactions | Partial (models exist, routes exist, service exists) |
 | IMP-700 | CSV Import | **Done** (`app/imports/` module, parser, endpoints, RLS, tests) |
-| IMP-701 | Excel Import | **Missing** |
+| IMP-701 | Excel Import | **Done** (`app/imports/parsers/excel_parser.py`, `/imports/excel/upload`, reuses CSV/SMS confirm flow, RLS, tests) |
 | IMP-702 | SMS Bank Alert Parser | **Done** (`app/imports/parsers/sms_parser.py`, `/imports/sms/parse`, tests) |
 | IMP-703 | Import UI Refinements | **Missing** |
 | BILL-800 to BILL-801A | Bills | **Done** (`app/routers/bills.py`, CRUD, mark-paid payment posting through `AccountingService`, mark-unpaid reversal support, upcoming/overdue, dashboard summary, tests) |
@@ -614,9 +614,34 @@
 
 ---
 
+## Completed Card 40
+
+### Card 40: IMP-701 — Excel Import ✅ DONE
+
+**PLAN_V2 Reference:** PF-008 (Import Strategy) + IMP-701 (Excel Import)
+**Type:** Feature / Imports
+**Priority:** MEDIUM
+
+**Completed:**
+- Added `app/imports/parsers/excel_parser.py` (`ExcelParser`), a `.xlsx` parser reusing the CSV parser's column-alias detection and duplicate-key logic directly rather than duplicating it.
+- Added `POST /imports/excel/upload` (multipart: file, optional `sheet_name`, `mapping`, `default_account_id`, `default_currency`); all other import routes (`GET /imports/{job_id}`, `GET /imports/{job_id}/rows`, `POST /imports/{job_id}/confirm`, `POST /imports/{job_id}/cancel`) are unchanged and work identically for Excel jobs.
+- `import_type = "excel"` needed no migration (`ImportJob.import_type` is already a free-form `String(20)` column, as used for `"sms"`). Alembic head unchanged at `bd89e4fcf4b9`.
+- Confirm-to-accounting is fully reused: Excel rows post through the same `AccountingService.create_journal_entry` path as CSV/SMS, with one small additive fallback in `_resolve_category_account` for an optional per-row `default_account_id` (Excel-only; CSV/SMS resolution order is unaffected).
+- Uses `openpyxl` (already in `requirements.txt`) in `read_only=True, data_only=True` mode — formulas/macros are never executed, the file is parsed in memory and never written to disk, and only `.xlsx` is accepted (`.xls` rejected with a clear error).
+- Added 21 new tests (parser unit tests + upload/confirm/tenant-isolation/account-visibility integration tests).
+
+**Remaining:**
+- Legacy `.xls` is not supported (documented limitation).
+- No column-mapping UI and no general import UI yet — tracked as **IMP-703**.
+- Only the first worksheet is parsed unless `sheet_name` is explicitly supplied (no "all sheets" mode).
+
+**Test results:** 645 passed, 1 skipped
+
+---
+
 ## Latest Completed Card
 
-**REP-2001 - Financial Reports UI / Report Center** is complete. Users can now view the Income Statement, Balance Sheet, Cash Flow, Net Worth, and Expense Analysis reports directly in the browser — with date filters, empty states, and HTMX-driven tab/filter refreshes — without calling the JSON API manually. Every route is strictly read-only and reuses the REP-2000 `ReportService` unchanged; no report calculation logic was duplicated. Tenant isolation and RLS remain enforced and the full test suite passes.
+**IMP-701 - Excel Import** is complete. Users can now upload `.xlsx` workbooks through `POST /imports/excel/upload` and preview, validate, de-duplicate, and confirm them into journal entries through the exact same `ImportJob`/`ImportedRow` pipeline and confirm/posting logic already used by CSV and SMS import — no parser or posting logic was duplicated. The workbook is parsed entirely in memory (never written to disk) with formulas/macros never executed. Tenant isolation, RLS, and account-visibility rules remain enforced and the full test suite passes.
 
 ---
 
