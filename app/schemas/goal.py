@@ -121,6 +121,21 @@ class GoalProgressResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class DashboardGoalContributionItem(BaseModel):
+    """A single contribution row for the dashboard's per-goal contribution history."""
+
+    id: int
+    goal_id: int
+    goal_name: str
+    amount: float
+    date: date
+    contributed_by_name: Optional[str] = None
+    posting_status: str
+    journal_entry_id: Optional[int] = None
+    reversal_journal_entry_id: Optional[int] = None
+    can_reverse: bool
+
+
 class DashboardFamilyGoalItem(BaseModel):
     id: int
     name: str
@@ -136,6 +151,7 @@ class DashboardFamilyGoalItem(BaseModel):
     can_view: bool
     can_manage: bool
     can_contribute: bool
+    recent_contributions: List[DashboardGoalContributionItem] = []
 
 
 class FamilyGoalsDashboardResponse(BaseModel):

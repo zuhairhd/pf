@@ -1,0 +1,41 @@
+{% if goal.recent_contributions %}
+<div class="goal-contributions mt-3 pt-2 border-top">
+    <p class="text-muted small mb-2">Recent Contributions</p>
+    <ul class="list-unstyled mb-0 small">
+        {% for contribution in goal.recent_contributions %}
+        <li id="goal-contribution-{{ contribution.id }}" class="d-flex justify-content-between align-items-center py-1 gap-2 flex-wrap">
+            <span>
+                {{ contribution.date }} &mdash; {{ currency }} {{ "%.3f"|format(contribution.amount) }}
+                {% if contribution.contributed_by_name %}
+                <span class="text-muted">by {{ contribution.contributed_by_name }}</span>
+                {% endif %}
+            </span>
+            <span class="d-flex align-items-center gap-2">
+                {% if contribution.posting_status == "posted" %}
+                <span class="badge bg-success">Posted</span>
+                {% elif contribution.posting_status == "reversed" %}
+                <span class="badge bg-secondary">Reversed</span>
+                {% elif contribution.posting_status == "failed" %}
+                <span class="badge bg-danger">Failed</span>
+                {% else %}
+                <span class="badge bg-light text-dark border">Progress Only</span>
+                {% endif %}
+
+                {% if contribution.can_reverse %}
+                <button
+                    type="button"
+                    class="btn btn-sm btn-outline-danger py-0 px-2"
+                    hx-post="/dashboard/partials/family-goals/{{ contribution.goal_id }}/contributions/{{ contribution.id }}/reverse"
+                    hx-target="#family-goals-widget"
+                    hx-swap="outerHTML"
+                    hx-confirm="Reverse this goal contribution? This creates a reversing journal entry and cannot be undone."
+                >
+                    Reverse
+                </button>
+                {% endif %}
+            </span>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}

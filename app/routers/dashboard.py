@@ -28,7 +28,12 @@ from app.schemas.budget import (
     FamilyBudgetsDashboardResponse,
 )
 from app.schemas.dashboard import DashboardToday
-from app.schemas.goal import FamilyGoalsDashboardResponse, DashboardFamilyGoalItem, GoalContributionCreate
+from app.schemas.goal import (
+    DashboardFamilyGoalItem,
+    DashboardGoalContributionItem,
+    FamilyGoalsDashboardResponse,
+    GoalContributionCreate,
+)
 from app.schemas.family_chore import (
     ChoreCompletionCreate,
     DashboardAccountOption,
@@ -383,11 +388,34 @@ async def run_reminders_partial(
 # ---------------------------------------------------------------------------
 
 
+_DASHBOARD_RECENT_CONTRIBUTIONS_LIMIT = 5
+
+
+async def _dashboard_contributor_names(db: AsyncSession, user_ids: set[int]) -> dict[int, str]:
+    """Batch-resolve contributor display names for the dashboard contribution history."""
+    if not user_ids:
+        return {}
+    result = await db.execute(select(User).where(User.id.in_(user_ids)))
+    return {
+        u.id: f"{u.first_name} {u.last_name}".strip() or u.email
+        for u in result.scalars().all()
+    }
+
+
 async def _build_family_goals_dashboard(
     db: AsyncSession,
     user: User,
 ) -> dict:
-    """Load family goals visible to the user and compute dashboard summary."""
+    """Load family goals visible to the user and compute dashboard summary.
+
+    Includes a small, permission-aware recent-contributions list per goal
+    (GOAL-1401B/DB-1105B) -- read-only, reuses FamilyGoalService.list_contributions()
+    unchanged. A contribution's `can_reverse` flag is only true when the current
+    user can manage the goal and the contribution is an unreversed posted entry
+    with a journal_entry_id -- the same eligibility FamilyGoalService.reverse_contribution()
+    itself enforces server-side, so the button is never shown for something the
+    backend would reject anyway.
+    """
     goal_service = FamilyGoalService(db, tenant_id=user.organization_id, user=user)
     visible_goals = await goal_service.list_visible_goals()
 
@@ -410,6 +438,35 @@ async def _build_family_goals_dashboard(
         elif goal.status == "completed":
             completed_count += 1
 
+        can_manage = await goal_service.can_manage_goal(goal)
+
+        contributions = await goal_service.list_contributions(goal.id)
+        recent = contributions[:_DASHBOARD_RECENT_CONTRIBUTIONS_LIMIT]
+        names = await _dashboard_contributor_names(
+            db, {c.contributed_by_user_id for c in recent if c.contributed_by_user_id}
+        )
+        recent_contributions = [
+            DashboardGoalContributionItem(
+                id=c.id,
+                goal_id=goal.id,
+                goal_name=goal.name,
+                amount=float(c.amount),
+                date=c.date,
+                contributed_by_name=names.get(c.contributed_by_user_id),
+                posting_status=c.posting_status,
+                journal_entry_id=c.journal_entry_id,
+                reversal_journal_entry_id=c.reversal_journal_entry_id,
+                can_reverse=(
+                    can_manage
+                    and c.journal_entry_id is not None
+                    and c.reversal_journal_entry_id is None
+                    and c.posting_status == "posted"
+                    and c.amount > 0
+                ),
+            )
+            for c in recent
+        ]
+
         goals.append(
             DashboardFamilyGoalItem(
                 id=goal.id,
@@ -424,8 +481,9 @@ async def _build_family_goals_dashboard(
                 owner_user_id=goal.owner_user_id,
                 family_id=goal.family_id,
                 can_view=True,
-                can_manage=await goal_service.can_manage_goal(goal),
+                can_manage=can_manage,
                 can_contribute=await goal_service.can_contribute_to_goal(goal),
+                recent_contributions=recent_contributions,
             )
         )
 
@@ -528,6 +586,48 @@ async def family_goals_add_contribution_partial(
             "currency": settings.CURRENCY_DEFAULT,
             "today": date.today().isoformat(),
         },
+    )
+
+
+@router.post(
+    "/partials/family-goals/{goal_id}/contributions/{contribution_id}/reverse",
+    response_class=HTMLResponse,
+)
+async def family_goals_reverse_contribution_partial(
+    request: Request,
+    goal_id: int,
+    contribution_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Reverse a posted family goal contribution from the dashboard widget.
+
+    Reuses FamilyGoalService.reverse_contribution() unchanged -- the same
+    tenant-scoped, permission-gated, idempotent reversal used by the
+    POST /family/goals/{goal_id}/contributions/{contribution_id}/reverse API
+    route (GOAL-1401B). No reversal logic lives here; this route only calls
+    the service and re-renders the widget.
+    """
+    goal_service = FamilyGoalService(db, tenant_id=user.organization_id, user=user)
+    action_error = None
+    status_code = 200
+    try:
+        await goal_service.reverse_contribution(goal_id, contribution_id)
+    except FamilyGoalServiceError as exc:
+        action_error = exc.message
+        status_code = 400
+
+    family_goals = await _build_family_goals_dashboard(db, user)
+    return templates.TemplateResponse(
+        request,
+        "dashboard/partials/family_goals_widget.html",
+        {
+            "family_goals": family_goals,
+            "currency": settings.CURRENCY_DEFAULT,
+            "today": date.today().isoformat(),
+            "action_error": action_error,
+        },
+        status_code=status_code,
     )
 
 

@@ -10,9 +10,9 @@
 
 ## Executive Summary
 
-Cards PF-014-DB through REP-2000 (Basic Financial Reports), REP-2001 (Financial Reports UI / Report Center), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), AI-1222 (AI Confidence Scoring), AI-1223 (Dashboard v2), FAM-1303 (Family Budgets), DB-1106A (Family Budget Dashboard Widget UI), FAM-1304 (Allowance and Chore Tracking), DB-1107A (Allowance and Chore Dashboard Widget UI), FAM-1305 (Allowance Payment Posting Through Accounting Engine), DB-1107B (Allowance Payment Dashboard Action Form), DB-1107C (Allowance Payment Reversal Dashboard Action), IMP-701 (Excel Import), IMP-703 (Import UI), and GOAL-1401B (Goal Contribution Reversal) are **COMPLETE**. The database has 46 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and the dashboard is the AI-centric "Today" landing page — surfacing health score, proactive alerts, confidence-aware recommendations, optimizer shortcuts, commitments, family goals, permission-aware family budgets, and permission-aware chores/allowance. The full allowance lifecycle — chore → completion → approval → posted payment → reversal — is available both via API and dashboard, goal contributions can now be posted and reversed through the accounting engine the same way, users can view Income Statement, Balance Sheet, Cash Flow, Net Worth, and Expense Analysis reports directly in the browser (REP-2001), and the import pipeline supports CSV, SMS, and Excel (`.xlsx`) sources end-to-end through a browser-facing Import Center (`/imports`).
+Cards PF-014-DB through REP-2000 (Basic Financial Reports), REP-2001 (Financial Reports UI / Report Center), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), AI-1222 (AI Confidence Scoring), AI-1223 (Dashboard v2), FAM-1303 (Family Budgets), DB-1106A (Family Budget Dashboard Widget UI), FAM-1304 (Allowance and Chore Tracking), DB-1107A (Allowance and Chore Dashboard Widget UI), FAM-1305 (Allowance Payment Posting Through Accounting Engine), DB-1107B (Allowance Payment Dashboard Action Form), DB-1107C (Allowance Payment Reversal Dashboard Action), IMP-701 (Excel Import), IMP-703 (Import UI), GOAL-1401B (Goal Contribution Reversal), and DB-1105B (Family Goal Contribution Reversal Dashboard Action) are **COMPLETE**. The database has 46 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and the dashboard is the AI-centric "Today" landing page — surfacing health score, proactive alerts, confidence-aware recommendations, optimizer shortcuts, commitments, family goals, permission-aware family budgets, and permission-aware chores/allowance. The full allowance lifecycle and the full goal-contribution lifecycle — post → reverse, both via API and dashboard — are now symmetric, users can view Income Statement, Balance Sheet, Cash Flow, Net Worth, and Expense Analysis reports directly in the browser (REP-2001), and the import pipeline supports CSV, SMS, and Excel (`.xlsx`) sources end-to-end through a browser-facing Import Center (`/imports`).
 
-The next card should be **DB-1105B — Family Goal Contribution Reversal Dashboard Action**, the dashboard follow-up to GOAL-1401B — the reversal API exists, but the Family Goals dashboard widget still has no contribution-history list or reversal action, mirroring exactly how DB-1107C followed FAM-1305 for allowance payments.
+The next card should be **AUTH-305 — Tenant Member Invitation Flow**, closing a gap repeatedly flagged as a known limitation across FAM-1301, FAM-1302, and GOAL-1401A — family member activation still requires a manual PATCH rather than a real invitation/acceptance flow.
 
 ---
 
@@ -1026,15 +1026,36 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 43
+
+### Card 43: DB-1105B — Family Goal Contribution Reversal Dashboard Action ✅ DONE
+
+**PLAN_V2 Reference:** DB-1105B (informal follow-up to GOAL-1401B, matching the DB-1107C dashboard-action pattern)
+**Type:** Feature / Dashboard
+**Priority:** MEDIUM
+
+**Completed:**
+- Added a "Recent Contributions" list to each goal card in the Family Goals dashboard widget, reusing `FamilyGoalService.list_contributions()` unchanged, with a Posted/Reversed/Progress-only/Failed badge per contribution.
+- Added `POST /dashboard/partials/family-goals/{goal_id}/contributions/{contribution_id}/reverse`, calling the exact same `FamilyGoalService.reverse_contribution()` used by the GOAL-1401B API route — no reversal logic was duplicated.
+- The Reverse button (`hx-confirm`-gated, matching the existing complete/cancel button precedent) only renders when the server-side eligibility rule is already satisfied (`can_manage` + posted + unreversed + has journal entry), so it never offers an action the backend would reject.
+- `DashboardFamilyGoalItem` gained `recent_contributions`; all existing dashboard fields are unchanged.
+- 18 new tests; full suite **708 passed, 1 skipped** (up from 690 passed, 1 skipped), zero regressions.
+
+**Remaining:**
+- No dedicated goal-detail page with full/paginated contribution history (explicitly out of scope).
+- No edit-in-place for a posted contribution's amount.
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 43: DB-1105B — Family Goal Contribution Reversal Dashboard Action
+### Card 44: AUTH-305 — Tenant Member Invitation Flow
 
-**Decision:** GOAL-1401B just shipped `POST /family/goals/{goal_id}/contributions/{contribution_id}/reverse` at the API level, but the Family Goals dashboard widget (DB-1105A) has no per-contribution history list to attach a reversal action to — GOAL-1401B's own report explicitly defers this UI work rather than overbuilding it into a card that wasn't scoped for dashboard changes. This mirrors exactly how DB-1107C (Allowance Payment Reversal Dashboard Action) followed FAM-1305 (Allowance Payment Posting): the reversal engine and API land first, then a small, focused dashboard-action-button card exposes it without adding new business logic.
+**Decision:** `PLAN_V2_CARD_STATUS.md` lists `AUTH-305` as **Partial** — `FamilyMember` already has invitation fields, but there is no invitation endpoint and no email sending; activating a family member still requires a manual `PATCH /family/members/{id}` with `is_active: true`. This exact gap has been called out as a known limitation in at least three prior reports this session (FAM-1301, FAM-1302, GOAL-1401A) and every test fixture in the codebase already works around it with the same two-step create-then-patch pattern (`_add_member`/`_add_family_member` helpers across `test_family_goals.py`, `test_dashboard_widget.py`, `test_goal_contribution_reversal.py`, etc.). Closing it removes a long-standing rough edge from real onboarding rather than opening a new feature area.
 
-**What to tell the coding agent for DB-1105B:**
+**What to tell the coding agent for AUTH-305:**
 
-> "Implement DB-1105B: Family Goal Contribution Reversal Dashboard Action. Add a contribution-history list to the Family Goals dashboard widget (or goal detail view) showing each contribution's amount, date, posting_status, and a Reversed badge where applicable — reusing FamilyGoalService.list_contributions() unchanged. For posted (non-reversed) contributions the current user can manage, add a small reverse action (following the DB-1107C dashboard-action-button/HTMX-partial precedent, app/routers/dashboard.py) that posts to the existing /family/goals/{goal_id}/contributions/{contribution_id}/reverse route from GOAL-1401B -- do not duplicate or reimplement any reversal logic. Require a confirmation step before reversing. Respect the same require_manage() permission gate GOAL-1401B already enforces, and never silently reverse from the dashboard without an explicit user action. Add tests for: contribution history renders with correct posting_status/badges, reverse action is hidden for progress-only contributions and for users without manage permission, reversing from the dashboard updates the widget and goal progress, tenant isolation, and full regression."
+> "Implement AUTH-305: Tenant Member Invitation Flow. Add an invitation endpoint (e.g. POST /family/members/{id}/invite or fold invitation into the existing POST /family/members create flow) that sends an invitation email (reuse the existing email backend from NOTIF-1600) with a secure, expiring token, plus an acceptance endpoint (e.g. POST /auth/accept-invitation) that activates the FamilyMember (is_active=true) and links it to a User account -- creating one via the existing signup path if the invited email has no account yet. Do not bypass existing auth/password-hashing flows. Preserve the existing direct PATCH /family/members/{id} activation path for backward compatibility (admins can still activate manually). Respect tenant scoping and RLS throughout. Add tests for: invitation creates a pending, inactive FamilyMember with a token; the acceptance endpoint activates the member and rejects expired/invalid/already-used tokens; a new user account is created when needed and linked correctly; tenant isolation; and full regression."
 
 ---
 

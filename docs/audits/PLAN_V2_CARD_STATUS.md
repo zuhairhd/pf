@@ -89,7 +89,7 @@
 | SUB-900 to SUB-901 | Subscriptions | **Done** (`app/routers/subscriptions.py`, CRUD, mark-paid payment posting through `AccountingService`, payment reversal support, pause/cancel/activate, renewals, equivalent amounts, tests) |
 | ACC-503A | Journal Entry Reversal Support | **Done** (`AccountingService.reverse_journal_entry`, reversal metadata, bill/subscription reversal integration, tests) |
 | BDG-1000 to BDG-1003 | Budgets | **Done** for FAM-1303 family budgets (visibility, permissions, categories, budget-vs-actual); legacy simple `/budgets` router fixed and delegates to the safe service |
-| DB-1100 to DB-1107 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI, DB-1105A family goals widget UI, DB-1106A family budgets widget UI, DB-1107A allowance/chore widget UI, DB-1107B allowance payment dashboard form, and DB-1107C allowance payment reversal dashboard action; Partial for remaining dashboard widgets |
+| DB-1100 to DB-1107 | Dashboard | **Done** for DB-1104A bills/subscriptions widget UI, DB-1105A family goals widget UI, DB-1105B family goal contribution reversal dashboard action, DB-1106A family budgets widget UI, DB-1107A allowance/chore widget UI, DB-1107B allowance payment dashboard form, and DB-1107C allowance payment reversal dashboard action; Partial for remaining dashboard widgets |
 | AI-1200 to AI-1223 | AI CFO | **Done** for AI-1201 LLM client, AI-1214 What-If Simulator, AI-1211 Debt Optimizer, AI-1212 Savings Optimizer, AI-1213 Goal Planner, AI-1219 Proactive Alerts, AI-1220 AI Chat Interface, AI-1221 AI Memory System, AI-1222 AI Confidence Scoring, and AI-1223 Dashboard v2; Partial/Missing for AI-1215 Recommendation Engine, AI-1216/1217/1218 Daily/Weekly/Monthly Review Generation (not built as standalone cards) |
 | FAM-1300 | Family Finance Foundation | **Done** |
 | FAM-1301 | Family Account Visibility and Shared/Private Data Rules | **Done** |
@@ -692,9 +692,32 @@
 
 ---
 
+## Completed Card 43
+
+### Card 43: DB-1105B — Family Goal Contribution Reversal Dashboard Action ✅ DONE
+
+**PLAN_V2 Reference:** DB-1105B (informal follow-up to GOAL-1401B, matching the DB-1104A/DB-1105A/DB-1106A/DB-1107A/DB-1107B/DB-1107C widget-action pattern)
+**Type:** Feature / Dashboard
+**Priority:** MEDIUM
+
+**Completed:**
+- Added a permission-aware, per-goal "Recent Contributions" list to the Family Goals dashboard widget, showing amount, date, contributor, and a Posted/Reversed/Progress-only/Failed badge for each of the goal's most recent contributions.
+- Added `POST /dashboard/partials/family-goals/{goal_id}/contributions/{contribution_id}/reverse`, a thin HTMX wrapper that calls the exact same `FamilyGoalService.reverse_contribution()` used by the GOAL-1401B API route — no reversal logic was duplicated.
+- A "Reverse" button (`hx-confirm`-gated) appears only when the current user can manage the goal, the contribution has a `journal_entry_id`, has no `reversal_journal_entry_id` yet, and `posting_status == "posted"` — the same eligibility the backend itself enforces, so the button is never shown for something the server would reject.
+- `DashboardFamilyGoalItem` gained a `recent_contributions: List[DashboardGoalContributionItem]` field; no existing dashboard fields changed, preserving JSON compatibility.
+- 18 new tests (rendering/eligibility, route/auth, reversal correctness, idempotency, read-only safety, tenant/RLS isolation).
+
+**Remaining:**
+- No dedicated goal-detail page with full (non-"recent") contribution history/pagination — out of scope per this card's explicit "do not build a full goal-management page" instruction.
+- No editing of a posted contribution's amount (reverse + re-add remains the only path, unchanged from GOAL-1401B).
+
+**Test results:** 708 passed, 1 skipped
+
+---
+
 ## Latest Completed Card
 
-**GOAL-1401B - Goal Contribution Reversal** is complete. A posted family goal contribution can now be reversed through `POST /family/goals/{goal_id}/contributions/{contribution_id}/reverse`, which creates a balanced reversing journal entry via the unchanged `AccountingService.reverse_journal_entry()` — the same engine already used for bill/subscription and allowance-payment reversal. The original journal entry is never mutated, the reversal is idempotent, goal progress correctly excludes reversed amounts, and only HEAD/PARENT (or an ADULT managing their own goal) may reverse a contribution. Tenant isolation, RLS, and the full test suite all pass.
+**DB-1105B - Family Goal Contribution Reversal Dashboard Action** is complete. The Family Goals dashboard widget now shows each goal's recent contributions with a status badge, and HEAD/PARENT (or a managing ADULT) can reverse an eligible posted contribution directly from the dashboard via `POST /dashboard/partials/family-goals/{goal_id}/contributions/{contribution_id}/reverse` — a thin wrapper around the unchanged `FamilyGoalService.reverse_contribution()` / `AccountingService.reverse_journal_entry()`. The reversal is idempotent, the original journal entry is never mutated, goal progress updates correctly, and the reverse button only ever appears when the backend would actually allow the action. Tenant isolation, RLS, and the full test suite all pass.
 
 ---
 

@@ -12,6 +12,7 @@ from app.schemas.goal import (
     GoalContributionResponse,
     GoalProgressResponse,
     DashboardFamilyGoalItem,
+    DashboardGoalContributionItem,
     FamilyGoalsDashboardResponse,
 )
 from app.schemas.loan import LoanCreate, LoanPaymentCreate
