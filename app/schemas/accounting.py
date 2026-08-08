@@ -16,6 +16,8 @@ class AccountCreate(BaseModel):
     visibility: Optional[str] = Field(default="private", pattern="^(private|shared|family)$")
     owner_user_id: Optional[int] = None
     family_id: Optional[int] = None
+    opening_balance: Optional[Decimal] = None
+    opening_balance_date: Optional[date] = None
 
 
 class AccountUpdate(BaseModel):
@@ -25,6 +27,8 @@ class AccountUpdate(BaseModel):
     visibility: Optional[str] = Field(default=None, pattern="^(private|shared|family)$")
     owner_user_id: Optional[int] = None
     family_id: Optional[int] = None
+    opening_balance: Optional[Decimal] = None
+    opening_balance_date: Optional[date] = None
 
 
 class AccountVisibilityUpdate(BaseModel):
@@ -50,6 +54,9 @@ class AccountResponse(BaseModel):
     visibility: str
     owner_user_id: Optional[int] = None
     family_id: Optional[int] = None
+    opening_balance: Optional[Decimal] = None
+    opening_balance_date: Optional[date] = None
+    opening_balance_journal_entry_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
@@ -98,3 +105,35 @@ class TransferCreate(BaseModel):
     to_account_id: int
     amount: Decimal
     narration: Optional[str] = None
+
+
+class OpeningBalanceAccountResult(BaseModel):
+    """Per-account outcome of an opening balance status check or posting run."""
+
+    account_id: int
+    code: str
+    name: str
+    account_type: str
+    status: str  # pending | posted | already_posted | skipped_zero | skipped_no_balance | skipped_offset_account
+    amount: Optional[Decimal] = None
+    journal_entry_id: Optional[int] = None
+
+
+class OpeningBalanceStatusResponse(BaseModel):
+    accounts_considered: int
+    accounts_pending: int
+    accounts_already_posted: int
+    accounts_skipped: int
+    opening_balance_equity_account_id: Optional[int] = None
+    results: List[OpeningBalanceAccountResult]
+
+
+class OpeningBalancePostResponse(BaseModel):
+    accounts_considered: int
+    accounts_posted: int
+    accounts_already_posted: int
+    accounts_skipped: int
+    opening_balance_equity_account_id: Optional[int] = None
+    total_debit: Decimal
+    total_credit: Decimal
+    results: List[OpeningBalanceAccountResult]

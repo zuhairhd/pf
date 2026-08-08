@@ -9,6 +9,7 @@ from app.models.database import get_db
 from app.core.security import get_db_with_tenant_context, require_tenant_member
 from app.models import Account, JournalEntry, JournalLine
 from app.models import User
+from app.models.family import FamilyRole
 from app.schemas.accounting import (
     AccountCreate,
     AccountUpdate,
@@ -19,6 +20,8 @@ from app.schemas.accounting import (
     JournalEntryReverseLine,
     JournalEntryReverseRequest,
     JournalEntryReverseResponse,
+    OpeningBalancePostResponse,
+    OpeningBalanceStatusResponse,
 )
 from app.services.accounting_service import AccountingService
 from app.services.family_account_access_service import FamilyAccountAccessService
@@ -43,9 +46,27 @@ def _to_response(account: Account) -> AccountResponse:
         visibility=account.visibility,
         owner_user_id=account.owner_user_id,
         family_id=account.family_id,
+        opening_balance=account.opening_balance,
+        opening_balance_date=account.opening_balance_date,
+        opening_balance_journal_entry_id=account.opening_balance_journal_entry_id,
         created_at=account.created_at,
         updated_at=account.updated_at,
     )
+
+
+async def _require_accounting_admin(db: AsyncSession, user: User) -> None:
+    """Only HEAD/PARENT (or a tenant OWNER/ADMIN with no family record, which
+    FamilyAccountAccessService.get_role() already resolves to HEAD) may
+    manage tenant-wide accounting setup actions like opening balances --
+    matching the exact elevated-role gate FAM-1305/GOAL-1401B already use for
+    posting/reversing financial entries."""
+    access = FamilyAccountAccessService(db, user.organization_id, user)
+    role = await access.get_role()
+    if role not in (FamilyRole.HEAD, FamilyRole.PARENT):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have permission to manage accounting setup",
+        )
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -114,7 +135,16 @@ async def update_account(
         raise HTTPException(status_code=403, detail="Access denied")
 
     data = payload.model_dump(exclude_unset=True)
-    for field in ("name", "description", "is_active"):
+    if (
+        ("opening_balance" in data or "opening_balance_date" in data)
+        and account.opening_balance_journal_entry_id is not None
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Opening balance has already been posted and cannot be changed",
+        )
+
+    for field in ("name", "description", "is_active", "opening_balance", "opening_balance_date"):
         if field in data:
             setattr(account, field, data[field])
     await db.commit()
@@ -168,6 +198,40 @@ async def update_account_owner(
     await db.commit()
     await db.refresh(account)
     return _to_response(account)
+
+
+@router.get("/opening-balances/status", response_model=OpeningBalanceStatusResponse)
+async def get_opening_balances_status(
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Preview opening balance posting status without posting anything.
+
+    Read-only: never creates or modifies a journal entry, account, or any
+    other record.
+    """
+    await _require_accounting_admin(db, user)
+    service = AccountingService(db, user.organization_id)
+    status = await service.get_opening_balance_status()
+    return OpeningBalanceStatusResponse(**status)
+
+
+@router.post("/opening-balances/post", response_model=OpeningBalancePostResponse)
+async def post_opening_balances(
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Post configured opening balances into real, idempotent journal entries.
+
+    Reuses AccountingService.post_opening_balances() unchanged, which itself
+    only ever creates entries through create_journal_entry() -- never a
+    direct insert. Safe to call repeatedly: already-posted accounts are
+    reported, never re-posted or duplicated.
+    """
+    await _require_accounting_admin(db, user)
+    service = AccountingService(db, user.organization_id)
+    result = await service.post_opening_balances(posted_by=user.id)
+    return OpeningBalancePostResponse(**result)
 
 
 @router.post(

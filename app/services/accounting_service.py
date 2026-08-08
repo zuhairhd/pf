@@ -3,7 +3,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from datetime import datetime, date, timedelta
 from decimal import Decimal
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 
 from app.models import Account, JournalEntry, JournalLine, RecurringTransaction
 from app.schemas.accounting import AccountCreate, JournalEntryCreate, JournalLineCreate, TransferCreate
@@ -11,11 +11,17 @@ from app.schemas.accounting import AccountCreate, JournalEntryCreate, JournalLin
 
 class AccountingService:
     """Double-entry accounting engine service."""
-    
+
+    # Well-known tenant-scoped equity account used as the offsetting side of
+    # opening balance postings (ACC-502). Matches the naming already used by
+    # the default seeded chart of accounts (app/seeds/default_data.py).
+    OPENING_BALANCE_EQUITY_CODE = "3000"
+    OPENING_BALANCE_EQUITY_NAME = "Opening Balance"
+
     def __init__(self, db: AsyncSession, tenant_id: int):
         self.db = db
         self.tenant_id = tenant_id
-    
+
     async def create_account(self, account_data: AccountCreate) -> Account:
         """Create a new account in the chart of accounts."""
         account = Account(
@@ -31,12 +37,240 @@ class AccountingService:
             visibility=account_data.visibility or "private",
             owner_user_id=account_data.owner_user_id,
             family_id=account_data.family_id,
+            opening_balance=getattr(account_data, "opening_balance", None),
+            opening_balance_date=getattr(account_data, "opening_balance_date", None),
         )
         self.db.add(account)
         await self.db.commit()
         await self.db.refresh(account)
         return account
     
+    # -------------------------------------------------------------------
+    # Opening balances (ACC-502)
+    # -------------------------------------------------------------------
+
+    async def _opening_balance_candidate_accounts(
+        self, account_ids: Optional[List[int]]
+    ) -> List[Account]:
+        query = select(Account).where(Account.tenant_id == self.tenant_id)
+        if account_ids is not None:
+            query = query.where(Account.id.in_(account_ids))
+        result = await self.db.execute(query.order_by(Account.code))
+        return list(result.scalars().all())
+
+    async def _find_opening_balance_equity_account(self) -> Optional[Account]:
+        """Look up the tenant's opening-balance offset account, if any exists."""
+        result = await self.db.execute(
+            select(Account).where(
+                Account.tenant_id == self.tenant_id,
+                Account.account_type == "Equity",
+            ).where(
+                (Account.code == self.OPENING_BALANCE_EQUITY_CODE)
+                | (func.lower(Account.name) == self.OPENING_BALANCE_EQUITY_NAME.lower())
+            )
+        )
+        return result.scalars().first()
+
+    async def _get_or_create_opening_balance_equity_account(self) -> Account:
+        """Return the tenant's opening-balance offset account, creating it if absent.
+
+        Reuses create_account() unchanged and the exact naming already used
+        by the default seeded chart of accounts, so a tenant that already
+        seeded one (code 3000, "Opening Balance") gets it reused rather than
+        duplicated.
+        """
+        existing = await self._find_opening_balance_equity_account()
+        if existing is not None:
+            return existing
+        return await self.create_account(
+            AccountCreate(
+                code=self.OPENING_BALANCE_EQUITY_CODE,
+                name=self.OPENING_BALANCE_EQUITY_NAME,
+                account_type="Equity",
+                description="System-managed equity offset account for opening balance postings.",
+            )
+        )
+
+    def _classify_opening_balance_account(
+        self, account: Account, equity_account_id: Optional[int]
+    ) -> Tuple[str, Optional[Decimal]]:
+        """Return (status, amount) for an account without touching the database."""
+        if equity_account_id is not None and account.id == equity_account_id:
+            return "skipped_offset_account", account.opening_balance
+        if account.opening_balance_journal_entry_id is not None:
+            return "already_posted", account.opening_balance
+        if account.opening_balance is None:
+            return "skipped_no_balance", None
+        if account.opening_balance == 0:
+            return "skipped_zero", Decimal("0")
+        return "pending", account.opening_balance
+
+    @staticmethod
+    def _opening_balance_line_amounts(
+        account: Account, amount: Decimal
+    ) -> Tuple[Decimal, Decimal, Decimal, Decimal]:
+        """Return (account_debit, account_credit, equity_debit, equity_credit).
+
+        Respects each account type's normal balance side (Asset/Expense are
+        normally debit-balance; Liability/Equity/Income are normally
+        credit-balance) and flips sides safely for a negative opening amount,
+        always keeping the pair balanced.
+        """
+        abs_amount = abs(amount)
+        normal_debit = account.account_type in ("Asset", "Expense")
+        if (amount >= 0) == normal_debit:
+            account_debit, account_credit = abs_amount, Decimal("0")
+        else:
+            account_debit, account_credit = Decimal("0"), abs_amount
+        # The equity offset always takes the opposite side of the account line.
+        equity_debit, equity_credit = account_credit, account_debit
+        return account_debit, account_credit, equity_debit, equity_credit
+
+    @staticmethod
+    def _opening_balance_row(
+        account: Account, status: str, amount: Optional[Decimal], journal_entry_id: Optional[int]
+    ) -> dict:
+        return {
+            "account_id": account.id,
+            "code": account.code,
+            "name": account.name,
+            "account_type": account.account_type,
+            "status": status,
+            "amount": amount,
+            "journal_entry_id": journal_entry_id,
+        }
+
+    async def get_opening_balance_status(
+        self, account_ids: Optional[List[int]] = None
+    ) -> Dict:
+        """Read-only preview of what post_opening_balances() would do.
+
+        Never creates or modifies any record.
+        """
+        accounts = await self._opening_balance_candidate_accounts(account_ids)
+        equity_account = await self._find_opening_balance_equity_account()
+        equity_account_id = equity_account.id if equity_account else None
+
+        results = []
+        pending = already_posted = skipped = 0
+        for account in accounts:
+            status, amount = self._classify_opening_balance_account(account, equity_account_id)
+            results.append(
+                self._opening_balance_row(
+                    account, status, amount, account.opening_balance_journal_entry_id
+                )
+            )
+            if status == "pending":
+                pending += 1
+            elif status == "already_posted":
+                already_posted += 1
+            else:
+                skipped += 1
+
+        return {
+            "accounts_considered": len(accounts),
+            "accounts_pending": pending,
+            "accounts_already_posted": already_posted,
+            "accounts_skipped": skipped,
+            "opening_balance_equity_account_id": equity_account_id,
+            "results": results,
+        }
+
+    async def post_opening_balances(
+        self,
+        account_ids: Optional[List[int]] = None,
+        posted_by: Optional[int] = None,
+    ) -> Dict:
+        """Post configured opening balances into real, idempotent journal entries.
+
+        For each tenant account with a non-null, non-zero opening_balance
+        that has not already been posted, creates a single balanced journal
+        entry against a tenant-scoped "Opening Balance" Equity account
+        (auto-created if absent, reusing create_account() unchanged) via the
+        existing create_journal_entry() -- never a direct insert. Idempotent:
+        an account whose opening_balance_journal_entry_id is already set is
+        left untouched and reported as already_posted, never re-posted or
+        duplicated. Null/zero opening balances are skipped safely and never
+        produce a journal line.
+        """
+        accounts = await self._opening_balance_candidate_accounts(account_ids)
+        equity_account = await self._find_opening_balance_equity_account()
+        equity_account_id = equity_account.id if equity_account else None
+
+        results = []
+        pending: List[Tuple[Account, Decimal]] = []
+        already_posted = skipped = 0
+
+        for account in accounts:
+            status, amount = self._classify_opening_balance_account(account, equity_account_id)
+            if status == "pending":
+                pending.append((account, amount))
+                continue
+            results.append(
+                self._opening_balance_row(
+                    account, status, amount, account.opening_balance_journal_entry_id
+                )
+            )
+            if status == "already_posted":
+                already_posted += 1
+            else:
+                skipped += 1
+
+        total_debit = Decimal("0")
+        total_credit = Decimal("0")
+        posted = 0
+
+        if pending:
+            if equity_account is None:
+                equity_account = await self._get_or_create_opening_balance_equity_account()
+                equity_account_id = equity_account.id
+
+            for account, amount in pending:
+                account_debit, account_credit, equity_debit, equity_credit = (
+                    self._opening_balance_line_amounts(account, amount)
+                )
+                entry = await self.create_journal_entry(
+                    JournalEntryCreate(
+                        date=account.opening_balance_date or date.today(),
+                        narration=f"Opening balance: {account.name}",
+                        reference=f"OB-{self.tenant_id}-{account.id}",
+                        person_id=posted_by,
+                        lines=[
+                            JournalLineCreate(
+                                account_id=account.id,
+                                debit=account_debit,
+                                credit=account_credit,
+                                description="Opening balance",
+                            ),
+                            JournalLineCreate(
+                                account_id=equity_account.id,
+                                debit=equity_debit,
+                                credit=equity_credit,
+                                description=f"Opening balance offset: {account.name}",
+                            ),
+                        ],
+                    )
+                )
+                account.opening_balance_journal_entry_id = entry.id
+                await self.db.commit()
+                await self.db.refresh(account)
+
+                total_debit += account_debit + equity_debit
+                total_credit += account_credit + equity_credit
+                posted += 1
+                results.append(self._opening_balance_row(account, "posted", amount, entry.id))
+
+        return {
+            "accounts_considered": len(accounts),
+            "accounts_posted": posted,
+            "accounts_already_posted": already_posted,
+            "accounts_skipped": skipped,
+            "opening_balance_equity_account_id": equity_account_id,
+            "total_debit": total_debit,
+            "total_credit": total_credit,
+            "results": results,
+        }
+
     async def get_account_balance(
         self,
         account_id: int,

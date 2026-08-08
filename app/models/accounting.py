@@ -40,11 +40,22 @@ class Account(Base, TimestampMixin, TenantMixin):
     owner_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     family_id = Column(Integer, ForeignKey("families.id"), nullable=True, index=True)
 
+    # Opening balance (ACC-502). Nullable and distinct from a zero balance:
+    # NULL means "never configured" (skipped), 0 means "configured as zero"
+    # (also skipped, since there is nothing to post), and any other value is
+    # the amount posted through AccountingService.post_opening_balances().
+    opening_balance = Column(Numeric(15, 3), nullable=True)
+    opening_balance_date = Column(Date, nullable=True)
+    opening_balance_journal_entry_id = Column(Integer, ForeignKey("journal_entries.id"), nullable=True)
+
     # Relationships
     parent = relationship("Account", remote_side="Account.id", backref="children")
     journal_lines = relationship("JournalLine", back_populates="account")
     owner = relationship("User", foreign_keys=[owner_user_id])
     family = relationship("Family", foreign_keys=[family_id])
+    opening_balance_journal_entry = relationship(
+        "JournalEntry", foreign_keys=[opening_balance_journal_entry_id]
+    )
 
     __table_args__ = (
         Index("ix_accounts_tenant_visibility", "tenant_id", "visibility"),

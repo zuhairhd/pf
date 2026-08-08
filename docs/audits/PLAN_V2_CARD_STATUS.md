@@ -58,7 +58,7 @@
 | USR-402 | Theme and Notification Settings | **Partial** | `theme` on User, `NotificationSetting` model | No settings UI endpoint, no preference application | Build settings endpoints |
 | ACC-500 | Chart of Accounts (Hidden Foundation) | **Partial** | Account model with hierarchy, types, codes | No default COA seeding, not hidden from users | Add seed data; hide from normal view |
 | ACC-501 | Account Types and Hierarchy | **Partial** | `account_type` as String, `parent_account_id` | No enum for account types, no code validation | Add AccountType enum |
-| ACC-502 | Opening Balances | **Partial** | `current_balance` field on Account | No opening balance entry form, no JE auto-generation | Build opening balance flow |
+| ACC-502 | Opening Balances | **Done** | New nullable `Account.opening_balance`/`opening_balance_date`/`opening_balance_journal_entry_id` columns; `AccountingService.post_opening_balances()`/`get_opening_balance_status()`; `POST/GET /accounts/opening-balances/{post,status}` (corrected: the field was previously misdocumented as `current_balance`, which does not exist on `Account` — see the ACC-502 implementation report) | No opening-balance UI form (API-only) | — |
 
 ---
 
@@ -66,8 +66,8 @@
 
 | Status | Count | Cards |
 |--------|-------|-------|
-| **Done** | 23 | PF-000, PF-001, PF-003, PF-005, PF-011, PF-012, PF-014, PF-101, PF-103, PF-103C, PF-103B, SAAS-200-SEED, PF-100-TEST, SAAS-201, USR-401, AUTH-300, AUTH-301, AUTH-302, AUTH-303, AUTH-304, AUTH-305, AI-1201, NOTIF-1600 |
-| **Partial** | 15 | PF-004, PF-006, PF-007, PF-010, PF-015, PF-100, PF-102, SAAS-200, SAAS-202, SAAS-203, USR-400, USR-402, ACC-500, ACC-501, ACC-502 |
+| **Done** | 24 | PF-000, PF-001, PF-003, PF-005, PF-011, PF-012, PF-014, PF-101, PF-103, PF-103C, PF-103B, SAAS-200-SEED, PF-100-TEST, SAAS-201, USR-401, AUTH-300, AUTH-301, AUTH-302, AUTH-303, AUTH-304, AUTH-305, AI-1201, NOTIF-1600, ACC-502 |
+| **Partial** | 14 | PF-004, PF-006, PF-007, PF-010, PF-015, PF-100, PF-102, SAAS-200, SAAS-202, SAAS-203, USR-400, USR-402, ACC-500, ACC-501 |
 | **Missing** | 0 | — |
 | **Should Refactor** | 2 | PF-002, PF-013 |
 | **Unknown** | 1 | PF-009 |
@@ -740,9 +740,34 @@
 
 ---
 
+## Completed Card 45
+
+### Card 45: ACC-502 — Opening Balances ✅ DONE
+
+**PLAN_V2 Reference:** ACC-502 (Opening Balances)
+**Type:** Feature / Accounting
+**Priority:** MEDIUM
+
+**Completed:**
+- **Corrected a stale premise:** the card (and this row's old "Evidence" column) claimed `Account.current_balance` already existed — it does not (`Loan.current_balance` does; `Account` has no such field, confirmed via direct model introspection). Added three new nullable columns instead: `opening_balance`, `opening_balance_date`, `opening_balance_journal_entry_id` (Alembic `b7d2e5a91c48`).
+- Added `AccountingService.post_opening_balances()` / `get_opening_balance_status()`, reusing `create_journal_entry()` unchanged — no direct `JournalEntry`/`JournalLine` inserts.
+- Added `POST /accounts/opening-balances/post` and `GET /accounts/opening-balances/status`, gated to HEAD/PARENT via the exact elevated-role check FAM-1305/GOAL-1401B already use (`FamilyAccountAccessService.get_role()`).
+- One balanced journal entry per account (debit/credit chosen from each account type's normal-balance side, correctly flipping for a negative opening amount) against an auto-resolved/auto-created tenant-scoped "Opening Balance" Equity account (code `3000`) — reusing the exact naming the dev seed's `CHART_OF_ACCOUNTS` already established, so a tenant that seeded one gets it reused, not duplicated.
+- Idempotent: `Account.opening_balance_journal_entry_id` is checked first; an already-posted account is reported, never re-posted. Zero and null opening balances are both skipped safely (distinguished from each other, per the task's explicit split). The equity offset account itself is always excluded from receiving its own posting.
+- `PATCH /accounts/{id}` now rejects changing `opening_balance`/`opening_balance_date` once posted (`opening_balance_journal_entry_id is not None`) — historical postings are never silently invalidated.
+- 17 new tests (posting, balance verification, skip rules, idempotency, status detection, normal-balance-side correctness, permissions, tenant isolation, RLS, and a read-only-adjacent safety check across budgets/bills/goals/goal-contributions/invitations).
+
+**Remaining:**
+- No opening-balance entry form/UI (API-only).
+- No bulk "set opening balance for N accounts at once" convenience endpoint — each account's `opening_balance` is set individually via create/update.
+
+**Test results:** 743 passed, 1 skipped
+
+---
+
 ## Latest Completed Card
 
-**AUTH-305 - Tenant Member Invitation Flow** is complete. An authorized family member (HEAD/PARENT) can now invite a person by email through `POST /family/members/invitations`; the invited person accepts through a token-gated, unauthenticated `POST /family/members/invitations/accept` that creates their account inside the inviting tenant and activates their family membership — replacing the previous manual-PATCH-only activation path (which remains available unchanged for direct additions). The flow is idempotent, permission-gated, and tenant-isolated at the service layer, with the new `family_invitations` table deliberately RLS-exempt for the same well-established reason `email_verifications`/`password_resets` already are. No journal entries, accounts, budgets, bills, or goals are touched by any invitation action. The full test suite passes.
+**ACC-502 - Opening Balances** is complete. A user can now configure an `opening_balance` on any account (at creation or via `PATCH`) and post it into a real, balanced journal entry through `POST /accounts/opening-balances/post` — reusing the existing `AccountingService.create_journal_entry()` engine unchanged, with debit/credit sides chosen correctly per account type and an auto-provisioned "Opening Balance" Equity offset account. The action is idempotent, restricted to HEAD/PARENT, and tenant-isolated; a `GET /accounts/opening-balances/status` endpoint previews the same classification read-only. Along the way, a stale documentation claim (`Account.current_balance`) was found and corrected — no such field exists on `Account`. No goals, budgets, bills, or invitations are touched by any opening-balance action. The full test suite passes.
 
 ---
 

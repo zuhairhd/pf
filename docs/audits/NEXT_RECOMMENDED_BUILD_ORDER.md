@@ -10,9 +10,9 @@
 
 ## Executive Summary
 
-Cards PF-014-DB through REP-2000 (Basic Financial Reports), REP-2001 (Financial Reports UI / Report Center), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), AI-1222 (AI Confidence Scoring), AI-1223 (Dashboard v2), FAM-1303 (Family Budgets), DB-1106A (Family Budget Dashboard Widget UI), FAM-1304 (Allowance and Chore Tracking), DB-1107A (Allowance and Chore Dashboard Widget UI), FAM-1305 (Allowance Payment Posting Through Accounting Engine), DB-1107B (Allowance Payment Dashboard Action Form), DB-1107C (Allowance Payment Reversal Dashboard Action), IMP-701 (Excel Import), IMP-703 (Import UI), GOAL-1401B (Goal Contribution Reversal), DB-1105B (Family Goal Contribution Reversal Dashboard Action), and AUTH-305 (Tenant Member Invitation Flow) are **COMPLETE**. The database has 47 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and the dashboard is the AI-centric "Today" landing page — surfacing health score, proactive alerts, confidence-aware recommendations, optimizer shortcuts, commitments, family goals, permission-aware family budgets, and permission-aware chores/allowance. The full allowance lifecycle and the full goal-contribution lifecycle — post → reverse, both via API and dashboard — are now symmetric, users can view Income Statement, Balance Sheet, Cash Flow, Net Worth, and Expense Analysis reports directly in the browser (REP-2001), the import pipeline supports CSV, SMS, and Excel (`.xlsx`) sources end-to-end through a browser-facing Import Center (`/imports`), and family onboarding now has a real invite-by-email-and-accept flow instead of manual member activation.
+Cards PF-014-DB through REP-2000 (Basic Financial Reports), REP-2001 (Financial Reports UI / Report Center), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), AI-1222 (AI Confidence Scoring), AI-1223 (Dashboard v2), FAM-1303 (Family Budgets), DB-1106A (Family Budget Dashboard Widget UI), FAM-1304 (Allowance and Chore Tracking), DB-1107A (Allowance and Chore Dashboard Widget UI), FAM-1305 (Allowance Payment Posting Through Accounting Engine), DB-1107B (Allowance Payment Dashboard Action Form), DB-1107C (Allowance Payment Reversal Dashboard Action), IMP-701 (Excel Import), IMP-703 (Import UI), GOAL-1401B (Goal Contribution Reversal), DB-1105B (Family Goal Contribution Reversal Dashboard Action), AUTH-305 (Tenant Member Invitation Flow), and ACC-502 (Opening Balances) are **COMPLETE**. The database has 47 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and the dashboard is the AI-centric "Today" landing page — surfacing health score, proactive alerts, confidence-aware recommendations, optimizer shortcuts, commitments, family goals, permission-aware family budgets, and permission-aware chores/allowance. The full allowance lifecycle and the full goal-contribution lifecycle — post → reverse, both via API and dashboard — are now symmetric, users can view Income Statement, Balance Sheet, Cash Flow, Net Worth, and Expense Analysis reports directly in the browser (REP-2001), the import pipeline supports CSV, SMS, and Excel (`.xlsx`) sources end-to-end through a browser-facing Import Center (`/imports`), family onboarding has a real invite-by-email-and-accept flow, and a configured account opening balance can now be posted into a real, idempotent, balanced journal entry.
 
-The next card should be **ACC-502 — Opening Balances**, wiring the existing `Account.current_balance` field into a real, idempotent journal entry through the already-proven `AccountingService` engine — a newly created account's starting balance is not currently reflected in the ledger at all.
+The next card should be **ACC-500 — Chart of Accounts (Hidden Foundation)**, auto-provisioning the already-trusted default `CHART_OF_ACCOUNTS` (currently only applied to the `--dev` seed tenant) for every real tenant at registration — a gap ACC-502 directly surfaced, since posting an opening balance had to auto-create the Equity offset account on demand for tenants with no chart of accounts at all.
 
 ---
 
@@ -1070,15 +1070,36 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 45
+
+### Card 45: ACC-502 — Opening Balances ✅ DONE
+
+**PLAN_V2 Reference:** ACC-502 (Opening Balances)
+**Type:** Feature / Accounting
+**Priority:** MEDIUM
+
+**Completed:**
+- Corrected a stale premise: `Account.current_balance` does not exist (confirmed via model introspection) — added `opening_balance`/`opening_balance_date`/`opening_balance_journal_entry_id` instead (Alembic `b7d2e5a91c48`).
+- `AccountingService.post_opening_balances()`/`get_opening_balance_status()`, reusing `create_journal_entry()` unchanged; `POST/GET /accounts/opening-balances/{post,status}`, gated to HEAD/PARENT via the existing `FamilyAccountAccessService.get_role()` elevated-role check.
+- One balanced entry per account against an auto-resolved/auto-created "Opening Balance" Equity account (code `3000`, matching the dev seed's existing naming); normal-balance-side debit/credit selection with correct sign-flip handling.
+- Idempotent (`opening_balance_journal_entry_id` checked first); null vs. zero opening balances both skipped safely and distinguished; the equity offset account is always excluded from posting against itself; `PATCH` blocks changing an already-posted opening balance.
+- 17 new tests; full suite **743 passed, 1 skipped** (up from 726 passed, 1 skipped), zero regressions.
+
+**Remaining:**
+- No opening-balance entry form/UI (API-only).
+- No bulk-set convenience endpoint.
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 45: ACC-502 — Opening Balances
+### Card 46: ACC-500 — Chart of Accounts (Hidden Foundation)
 
-**Decision:** `PLAN_V2_CARD_STATUS.md` lists `ACC-502` as **Partial** — `Account.current_balance` exists as a field, but there is no opening-balance entry flow and no journal-entry auto-generation for it, meaning a newly created account with a non-zero starting balance is not actually reflected in the ledger. This is a well-scoped, low-risk gap that directly reuses the `AccountingService`/journal-entry engine this session has already exercised repeatedly (GOAL-1401A/B, BILL-801A, FAM-1305, ACC-503A) — exactly the kind of "wire an existing field into the real accounting engine" card this session has consistently prioritized.
+**Decision:** `PLAN_V2_CARD_STATUS.md` lists `ACC-500` as **Partial** — a full, OMR-oriented default chart of accounts already exists (`app/seeds/default_data.py`'s `CHART_OF_ACCOUNTS`, including the "Opening Balance" Equity account ACC-502 just started reusing), but it is only ever applied to the single `--dev` seed tenant, not to every tenant created through real self-registration. This was directly surfaced while building ACC-502: `post_opening_balances()` has to auto-create the Opening Balance Equity account on demand precisely because a freshly registered tenant has no chart of accounts at all. Auto-provisioning the same, already-reviewed `CHART_OF_ACCOUNTS` list for every new tenant closes a real onboarding gap using code that already exists and is already trusted.
 
-**What to tell the coding agent for ACC-502:**
+**What to tell the coding agent for ACC-500:**
 
-> "Implement ACC-502: Opening Balances. When an account is created (or an existing account with no prior journal activity is given an opening balance), post a balanced opening journal entry through the existing AccountingService.create_journal_entry() (do not bypass it or write current_balance directly) -- debit the account for a positive opening balance (or credit for a negative/liability-style one) against a dedicated 'Opening Balance Equity' account (create it via the existing chart-of-accounts seeding pattern if one doesn't already exist), dated as of the account's opening-balance date. Add an opening_balance_journal_entry_id (nullable FK to journal_entries) on Account so this is idempotent -- do not let an account get two opening-balance entries. Respect tenant scoping, RLS, and account-visibility rules exactly as existing posting flows do. Add tests for: creating an account with a non-zero opening balance posts a balanced journal entry, a zero/omitted opening balance posts nothing, repeated opening-balance calls do not duplicate the entry, tenant isolation, RLS, and full regression."
+> "Implement ACC-500: Chart of Accounts (Hidden Foundation). Reuse the existing CHART_OF_ACCOUNTS list and AccountingService.create_account() unchanged (app/seeds/default_data.py, app/services/accounting_service.py) -- do not invent a new chart or duplicate the account definitions. When a new tenant/organization is created via the real registration flow (app/services/auth_service.py AuthService.create_user()), automatically create the same default chart of accounts for that tenant, tenant-scoped and RLS-safe (set tenant context before inserting), so every real tenant starts with a usable set of accounts instead of an empty chart -- exactly like the --dev seed already does for the development tenant. Do not re-seed or duplicate accounts for a tenant that already has any (idempotent). Consider whether/how this interacts with PF-007's 'hide COA from normal users' framing (accountant view vs normal view) but do not build the view-mode toggle in this card unless trivial -- that can remain a documented follow-up. Add tests for: a newly registered tenant has the full default chart of accounts; re-running the provisioning logic for a tenant that already has accounts does not duplicate them; tenant isolation; RLS; and full regression."
 
 ---
 
