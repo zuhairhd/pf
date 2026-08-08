@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Family, FamilyMember, FamilyRole, User
+from app.models import Family, FamilyInvitation, FamilyInvitationStatus, FamilyMember, FamilyRole, User
+from app.notifications.channels.email import send_email
+from app.utils.security import generate_secure_token
+
+
+# How long a family invitation remains acceptable before it expires.
+INVITATION_EXPIRY_DAYS = 7
 
 
 class FamilyServiceError(Exception):
@@ -159,6 +165,165 @@ class FamilyService:
         """Remove a family member."""
         await self.db.delete(member)
         await self.db.commit()
+
+    # -----------------------------------------------------------------------
+    # Invitations (AUTH-305)
+    # -----------------------------------------------------------------------
+
+    def _mark_expired_if_needed(self, invitation: FamilyInvitation) -> bool:
+        """Flip a stale pending invitation to expired. Returns True if changed."""
+        if (
+            invitation.status == FamilyInvitationStatus.PENDING.value
+            and invitation.expires_at < datetime.utcnow()
+        ):
+            invitation.status = FamilyInvitationStatus.EXPIRED.value
+            return True
+        return False
+
+    async def list_invitations(self) -> list[FamilyInvitation]:
+        """Return all invitations for the tenant family, newest first."""
+        family = await self.get_family()
+        if family is None:
+            return []
+        result = await self.db.execute(
+            select(FamilyInvitation)
+            .where(FamilyInvitation.tenant_id == self.tenant_id)
+            .where(FamilyInvitation.family_id == family.id)
+            .order_by(FamilyInvitation.created_at.desc())
+        )
+        invitations = list(result.scalars().all())
+        changed = [self._mark_expired_if_needed(inv) for inv in invitations]
+        if any(changed):
+            await self.db.commit()
+            for inv in invitations:
+                await self.db.refresh(inv)
+        return invitations
+
+    async def get_invitation(self, invitation_id: int) -> Optional[FamilyInvitation]:
+        """Return a single invitation by ID, scoped to the current tenant."""
+        result = await self.db.execute(
+            select(FamilyInvitation).where(
+                FamilyInvitation.id == invitation_id,
+                FamilyInvitation.tenant_id == self.tenant_id,
+            )
+        )
+        invitation = result.scalar_one_or_none()
+        if invitation is not None and self._mark_expired_if_needed(invitation):
+            await self.db.commit()
+            await self.db.refresh(invitation)
+        return invitation
+
+    async def create_invitation(self, data: dict) -> FamilyInvitation:
+        """Create (or safely reuse) a pending invitation for an email.
+
+        Idempotent: calling this again for an email with an existing pending,
+        non-expired invitation returns that same invitation instead of
+        creating a duplicate.
+        """
+        await self.require_permission("can_manage_members")
+
+        role = data.get("role", FamilyRole.VIEWER.value)
+        if hasattr(role, "value"):
+            role = role.value
+        if role not in {r.value for r in FamilyRole}:
+            raise FamilyServiceError(f"Invalid family role: {role}")
+
+        email = data["email"].strip().lower()
+        family = await self.get_or_create_family()
+
+        # This app is single-tenant-per-user: an email that already has an
+        # account cannot be auto-invited into a different tenant, since that
+        # would either sever their existing tenant access or require
+        # cross-tenant account linking, neither of which is safe here.
+        existing_user = await self.db.execute(select(User).where(User.email == email))
+        if existing_user.scalar_one_or_none() is not None:
+            raise FamilyServiceError(
+                "This email is already registered with an existing account and cannot be auto-invited"
+            )
+
+        existing_member = await self.db.execute(
+            select(FamilyMember).where(
+                FamilyMember.tenant_id == self.tenant_id,
+                FamilyMember.family_id == family.id,
+                FamilyMember.email == email,
+                FamilyMember.is_active.is_(True),
+            )
+        )
+        if existing_member.scalar_one_or_none() is not None:
+            raise FamilyServiceError("This email is already an active family member")
+
+        result = await self.db.execute(
+            select(FamilyInvitation).where(
+                FamilyInvitation.tenant_id == self.tenant_id,
+                FamilyInvitation.family_id == family.id,
+                FamilyInvitation.email == email,
+                FamilyInvitation.status == FamilyInvitationStatus.PENDING.value,
+            )
+        )
+        existing = result.scalar_one_or_none()
+        if existing is not None:
+            expired_now = self._mark_expired_if_needed(existing)
+            await self.db.commit()
+            if not expired_now:
+                await self.db.refresh(existing)
+                return existing
+
+        invitation = FamilyInvitation(
+            tenant_id=self.tenant_id,
+            family_id=family.id,
+            email=email,
+            first_name=data["first_name"],
+            last_name=data["last_name"],
+            relationship_type=data["relationship_type"],
+            role=role,
+            token=generate_secure_token(32),
+            status=FamilyInvitationStatus.PENDING.value,
+            expires_at=datetime.utcnow() + timedelta(days=INVITATION_EXPIRY_DAYS),
+            invited_by_user_id=self.user.id,
+        )
+        self.db.add(invitation)
+        await self.db.commit()
+        await self.db.refresh(invitation)
+
+        await self._send_invitation_email(invitation)
+        return invitation
+
+    async def cancel_invitation(self, invitation_id: int) -> FamilyInvitation:
+        """Cancel a pending invitation. Cannot cancel an already-resolved one."""
+        await self.require_permission("can_manage_members")
+
+        invitation = await self.get_invitation(invitation_id)
+        if invitation is None:
+            raise FamilyServiceError("Invitation not found")
+        if invitation.status != FamilyInvitationStatus.PENDING.value:
+            raise FamilyServiceError(
+                f"Cannot cancel an invitation that is already {invitation.status}"
+            )
+
+        invitation.status = FamilyInvitationStatus.CANCELLED.value
+        invitation.cancelled_at = datetime.utcnow()
+        await self.db.commit()
+        await self.db.refresh(invitation)
+        return invitation
+
+    async def _send_invitation_email(self, invitation: FamilyInvitation) -> None:
+        """Best-effort invitation email; delivery failure never raises.
+
+        Uses the project's existing pluggable email backend (console-logged
+        in dev/test by default, never sent externally unless EMAIL_BACKEND
+        is explicitly configured for SMTP).
+        """
+        accept_url = f"/family/members/invitations/accept?token={invitation.token}"
+        await send_email(
+            to_email=invitation.email,
+            subject="You're invited to join a family on PF AI",
+            body_text=(
+                f"Hi {invitation.first_name},\n\n"
+                "You have been invited to join a family on PF AI Personal Finance.\n"
+                f"Accept your invitation here: {accept_url}\n\n"
+                f"This invitation expires on {invitation.expires_at.isoformat()}."
+            ),
+        )
 
     # -----------------------------------------------------------------------
     # Permissions

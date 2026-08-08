@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.security import get_db_with_tenant_context, require_tenant_member
+from app.models.database import get_db
 from app.models import User, Account, JournalEntry
+from app.schemas.auth import TokenResponse
 from app.schemas.family import (
     FamilyCreate,
     FamilyResponse,
@@ -18,6 +20,9 @@ from app.schemas.family import (
     FamilyMemberResponse,
     FamilyMemberUpdate,
     FamilyPermissionsResponse,
+    FamilyInvitationAcceptRequest,
+    FamilyInvitationCreate,
+    FamilyInvitationResponse,
 )
 from app.schemas.accounting import AccountResponse
 from app.schemas.budget import (
@@ -50,6 +55,7 @@ from app.schemas.family_chore import (
     ChoreResponse,
     ChoreUpdate,
 )
+from app.services.auth_service import AuthService
 from app.services.family_service import FamilyService, FamilyServiceError
 from app.services.family_budget_service import FamilyBudgetService, FamilyBudgetServiceError
 from app.services.family_chore_service import FamilyChoreService, FamilyChoreServiceError
@@ -90,8 +96,38 @@ def _to_member_response(member) -> FamilyMemberResponse:
     )
 
 
+def _to_invitation_response(invitation) -> FamilyInvitationResponse:
+    return FamilyInvitationResponse(
+        id=invitation.id,
+        tenant_id=invitation.tenant_id,
+        family_id=invitation.family_id,
+        email=invitation.email,
+        first_name=invitation.first_name,
+        last_name=invitation.last_name,
+        relationship_type=invitation.relationship_type,
+        role=invitation.role,
+        status=invitation.status,
+        expires_at=invitation.expires_at,
+        accepted_at=invitation.accepted_at,
+        cancelled_at=invitation.cancelled_at,
+        invited_by_user_id=invitation.invited_by_user_id,
+        member_id=invitation.member_id,
+        created_at=invitation.created_at,
+        updated_at=invitation.updated_at,
+    )
+
+
 def _service(db: AsyncSession, user: User) -> FamilyService:
     return FamilyService(db, tenant_id=user.organization_id, user=user)
+
+
+def _invitation_error_status(message: str) -> int:
+    lower = message.lower()
+    if "not found" in lower:
+        return 404
+    if "permission" in lower:
+        return 403
+    return 400
 
 
 @router.post("", response_model=FamilyResponse)
@@ -205,6 +241,68 @@ async def delete_family_member(
     except FamilyServiceError as exc:
         raise HTTPException(status_code=400, detail=exc.message)
     return {"member_id": member_id, "deleted": True}
+
+
+@router.post("/members/invitations", response_model=FamilyInvitationResponse)
+async def create_family_member_invitation(
+    payload: FamilyInvitationCreate,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Invite a new family member by email (AUTH-305)."""
+    service = _service(db, user)
+    try:
+        invitation = await service.create_invitation(payload.model_dump())
+    except FamilyServiceError as exc:
+        raise HTTPException(status_code=_invitation_error_status(exc.message), detail=exc.message)
+    return _to_invitation_response(invitation)
+
+
+@router.get("/members/invitations", response_model=list[FamilyInvitationResponse])
+async def list_family_member_invitations(
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """List invitations for the current tenant's family."""
+    service = _service(db, user)
+    invitations = await service.list_invitations()
+    return [_to_invitation_response(i) for i in invitations]
+
+
+@router.post("/members/invitations/{invitation_id}/cancel", response_model=FamilyInvitationResponse)
+async def cancel_family_member_invitation(
+    invitation_id: int,
+    db: AsyncSession = Depends(get_db_with_tenant_context),
+    user: User = Depends(require_tenant_member),
+):
+    """Cancel a pending family member invitation."""
+    service = _service(db, user)
+    try:
+        invitation = await service.cancel_invitation(invitation_id)
+    except FamilyServiceError as exc:
+        raise HTTPException(status_code=_invitation_error_status(exc.message), detail=exc.message)
+    return _to_invitation_response(invitation)
+
+
+@router.post("/members/invitations/accept", response_model=TokenResponse)
+async def accept_family_member_invitation(
+    payload: FamilyInvitationAcceptRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Accept a family invitation: create the invited user's account, log
+    them in, and activate their family membership.
+
+    Unauthenticated by design (like /auth/register and /auth/reset-password)
+    -- the bearer token itself proves the invitation is legitimate, and the
+    resulting tenant is derived entirely from the token, not supplied by the
+    caller, so there is no cross-tenant parameter to reject.
+    """
+    auth_service = AuthService(db)
+    try:
+        user = await auth_service.accept_family_invitation(payload.token, payload.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return await auth_service.create_tokens(user)
 
 
 @router.get("/permissions", response_model=FamilyPermissionsResponse)

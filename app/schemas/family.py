@@ -84,3 +84,37 @@ class FamilyPermissionsResponse(BaseModel):
     can_edit_transactions: bool
     can_view_reports: bool
     can_approve_purchases: bool
+
+
+class FamilyInvitationCreate(BaseModel):
+    email: str = Field(..., min_length=1, max_length=255)
+    first_name: str = Field(..., min_length=1, max_length=100)
+    last_name: str = Field(..., min_length=1, max_length=100)
+    relationship_type: str = Field(..., min_length=1, max_length=50)
+    role: FamilyRole = FamilyRole.VIEWER
+
+
+class FamilyInvitationResponse(BaseModel):
+    id: int
+    tenant_id: int
+    family_id: int
+    email: str
+    first_name: str
+    last_name: str
+    relationship_type: str
+    role: str
+    status: str
+    expires_at: datetime
+    accepted_at: Optional[datetime] = None
+    cancelled_at: Optional[datetime] = None
+    invited_by_user_id: int
+    member_id: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class FamilyInvitationAcceptRequest(BaseModel):
+    token: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=8, max_length=128)

@@ -52,7 +52,7 @@
 | AUTH-302 | Forgot Password | **Done** | Forgot-password + reset-password endpoints, 1-hour token expiry, used-token invalidation, dev-mode link logging | — | — |
 | AUTH-303 | Email Verification | **Done** | Verification token creation, verify endpoint, 24-hour expiry, dev-mode link logging | — | — |
 | AUTH-304 | Role-Based Access Control (RBAC) | **Done** | `app.core.security` guards: active/verified/tenant-member/tenant-admin/tenant-owner/super-admin; admin routes protected | Resource-level object permissions not yet implemented | Add object-level permission checks in service layer |
-| AUTH-305 | Tenant Member Invitation | **Partial** | `FamilyMember` has invitation fields | No invitation endpoint, no email sending | Build invitation flow |
+| AUTH-305 | Tenant Member Invitation | **Done** | New `FamilyInvitation` model + `POST/GET /family/members/invitations`, `POST .../{id}/cancel`, `POST .../accept` (reuses `FamilyMember.invitation_*` fields at acceptance time); safe local email via existing `send_email()` backend | No resend-invitation endpoint | — |
 | USR-400 | User Profile and Settings | **Partial** | User model has profile fields | No separate UserProfile model, no avatar upload endpoint | Acceptable for now; add upload later |
 | USR-401 | Currency and Language Preferences | **Done** | `currency` (OMR default), `language`, `timezone` on User | OMR uses 3 decimals — verify formatting | Verify OMR formatting throughout |
 | USR-402 | Theme and Notification Settings | **Partial** | `theme` on User, `NotificationSetting` model | No settings UI endpoint, no preference application | Build settings endpoints |
@@ -66,8 +66,8 @@
 
 | Status | Count | Cards |
 |--------|-------|-------|
-| **Done** | 22 | PF-000, PF-001, PF-003, PF-005, PF-011, PF-012, PF-014, PF-101, PF-103, PF-103C, PF-103B, SAAS-200-SEED, PF-100-TEST, SAAS-201, USR-401, AUTH-300, AUTH-301, AUTH-302, AUTH-303, AUTH-304, AI-1201, NOTIF-1600 |
-| **Partial** | 16 | PF-004, PF-006, PF-007, PF-010, PF-015, PF-100, PF-102, SAAS-200, SAAS-202, SAAS-203, AUTH-305, USR-400, USR-402, ACC-500, ACC-501, ACC-502 |
+| **Done** | 23 | PF-000, PF-001, PF-003, PF-005, PF-011, PF-012, PF-014, PF-101, PF-103, PF-103C, PF-103B, SAAS-200-SEED, PF-100-TEST, SAAS-201, USR-401, AUTH-300, AUTH-301, AUTH-302, AUTH-303, AUTH-304, AUTH-305, AI-1201, NOTIF-1600 |
+| **Partial** | 15 | PF-004, PF-006, PF-007, PF-010, PF-015, PF-100, PF-102, SAAS-200, SAAS-202, SAAS-203, USR-400, USR-402, ACC-500, ACC-501, ACC-502 |
 | **Missing** | 0 | — |
 | **Should Refactor** | 2 | PF-002, PF-013 |
 | **Unknown** | 1 | PF-009 |
@@ -124,9 +124,9 @@
 
 ### High Priority (Needed for MVP)
 4. ~~**PF-103B** — Safe Super Admin RLS Bypass Design (for support operations)~~ **DONE**
-5. **PF-008 / IMP-700-703** — Import system (CSV/Excel/SMS) — critical for Oman market
-6. ~~**AUTH-300 to AUTH-304** — Complete auth flow (login, register, JWT, email verification, password reset, RBAC guards)~~ **DONE**  
-   **AUTH-305** — Tenant member invitation (remaining)
+5. ~~**PF-008 / IMP-700-703** — Import system (CSV/Excel/SMS)~~ **DONE**
+6. ~~**AUTH-300 to AUTH-304** — Complete auth flow (login, register, JWT, email verification, password reset, RBAC guards)~~ **DONE**
+   ~~**AUTH-305** — Tenant member invitation~~ **DONE**
 7. ~~**AI-1201** — LLM client integration (OpenAI) — core differentiator~~ **DONE**
 8. **PF-002 / PF-013** — Structural alignment (gradual refactor)
 
@@ -715,9 +715,34 @@
 
 ---
 
+## Completed Card 44
+
+### Card 44: AUTH-305 — Tenant Member Invitation Flow ✅ DONE
+
+**PLAN_V2 Reference:** AUTH-305 (Tenant Member Invitation)
+**Type:** Feature / Auth
+**Priority:** HIGH
+
+**Completed:**
+- Added a new `FamilyInvitation` model/table (Alembic `f3a8c1d94b7e`) with a `pending → accepted | cancelled | expired` lifecycle, a unique bearer token, and a 7-day expiry.
+- Added `POST/GET /family/members/invitations`, `POST /family/members/invitations/{id}/cancel` (authenticated, `can_manage_members`-gated, tenant-scoped like every other `FamilyService` query) and `POST /family/members/invitations/accept` (unauthenticated, token-driven, like `/auth/register`/`/auth/reset-password`).
+- Acceptance creates the invited person's `User` account inside the *inviting* tenant (`AuthService.create_user_in_organization`, new) and activates their `FamilyMember` row by reusing `FamilyService.create_member()` unchanged, then logs them in immediately (`TokenResponse`).
+- `family_invitations` is deliberately **not** RLS-protected, matching the existing, documented rationale for `email_verifications`/`password_resets` in `app/core/rls.py` (`GLOBAL_TABLES`): an accept-by-token request has no tenant context yet, so an RLS policy requiring `app.current_tenant_id` would make the row unreadable to the very request that needs it. Tenant isolation for the authenticated create/list/cancel operations is enforced at the service layer instead, exactly like the `users` table already does. `family_members`, `goals`, `journal_entries`, `journal_lines` all keep their existing RLS unchanged.
+- Invitation creation is idempotent (a repeat call for the same pending email returns the existing invitation) and proactively/defensively rejects an email that already has an account (this app is single-tenant-per-user, so cross-tenant account linking is out of scope by design).
+- Uses the project's existing pluggable, safe-by-default email backend (`send_email()`, console-logged in dev/test) — no new email service, no paid third-party provider.
+- 18 new tests (create/permissions, list/cancel/tenant isolation, acceptance/idempotency/expiry/cancellation, RLS, read-only safety).
+
+**Remaining:**
+- No resend-invitation endpoint (cancel + re-invite works as a substitute).
+- No UI/template for the invitation flow in this card (API-only, matching how several prior "-A" cards preceded their "-B" dashboard/UI follow-ups).
+
+**Test results:** 726 passed, 1 skipped
+
+---
+
 ## Latest Completed Card
 
-**DB-1105B - Family Goal Contribution Reversal Dashboard Action** is complete. The Family Goals dashboard widget now shows each goal's recent contributions with a status badge, and HEAD/PARENT (or a managing ADULT) can reverse an eligible posted contribution directly from the dashboard via `POST /dashboard/partials/family-goals/{goal_id}/contributions/{contribution_id}/reverse` — a thin wrapper around the unchanged `FamilyGoalService.reverse_contribution()` / `AccountingService.reverse_journal_entry()`. The reversal is idempotent, the original journal entry is never mutated, goal progress updates correctly, and the reverse button only ever appears when the backend would actually allow the action. Tenant isolation, RLS, and the full test suite all pass.
+**AUTH-305 - Tenant Member Invitation Flow** is complete. An authorized family member (HEAD/PARENT) can now invite a person by email through `POST /family/members/invitations`; the invited person accepts through a token-gated, unauthenticated `POST /family/members/invitations/accept` that creates their account inside the inviting tenant and activates their family membership — replacing the previous manual-PATCH-only activation path (which remains available unchanged for direct additions). The flow is idempotent, permission-gated, and tenant-isolated at the service layer, with the new `family_invitations` table deliberately RLS-exempt for the same well-established reason `email_verifications`/`password_resets` already are. No journal entries, accounts, budgets, bills, or goals are touched by any invitation action. The full test suite passes.
 
 ---
 

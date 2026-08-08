@@ -10,8 +10,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core.rls import set_tenant_context_async
 from app.models import (
     EmailVerification,
+    FamilyInvitation,
+    FamilyInvitationStatus,
     NotificationChannel,
     NotificationSetting,
     NotificationType,
@@ -20,6 +23,7 @@ from app.models import (
     RefreshToken,
     SubscriptionPlan,
     User,
+    UserRole,
 )
 from app.schemas.auth import TokenResponse, UserCreate
 from app.utils.security import (
@@ -115,6 +119,117 @@ class AuthService:
         await self.db.commit()
         await self.db.refresh(user)
 
+        return user
+
+    async def create_user_in_organization(
+        self,
+        *,
+        email: str,
+        password: str,
+        first_name: str,
+        last_name: str,
+        organization_id: int,
+        role: UserRole = UserRole.VIEWER,
+    ) -> User:
+        """Create a new user joining an existing organization (tenant).
+
+        Used by the family invitation acceptance flow (AUTH-305) so an
+        invited person's account is created directly inside the inviting
+        tenant, rather than spinning up a brand-new organization the way
+        self-registration (create_user) does. Email is marked verified
+        immediately since accepting a token-gated invitation already proves
+        ownership of the inbox that received it.
+        """
+        email = _normalize_email(email)
+        user = User(
+            email=email,
+            hashed_password=self.hash_password(password),
+            first_name=first_name,
+            last_name=last_name,
+            organization_id=organization_id,
+            role=role,
+            is_email_verified=True,
+            email_verified_at=datetime.utcnow(),
+        )
+        self.db.add(user)
+        await self.db.flush()
+        await self.db.refresh(user)
+
+        await self._create_default_notification_settings(user.id)
+
+        await self.db.commit()
+        await self.db.refresh(user)
+        return user
+
+    async def accept_family_invitation(self, token: str, password: str) -> User:
+        """Accept a family invitation.
+
+        Creates the invited person's user account inside the inviting
+        tenant, activates their family membership by reusing
+        FamilyService.create_member() unchanged, and marks the invitation
+        accepted. Rejects reuse of an already-accepted, cancelled, or
+        expired invitation, and rejects an email that already has an
+        account (cross-tenant account linking is out of scope for this
+        single-tenant-per-user architecture -- see create_invitation()).
+
+        Raises ValueError with a safe, user-facing message on failure.
+        """
+        # Local import avoids a module-level import cycle between
+        # auth_service (imported early during app startup) and family_service.
+        from app.services.family_service import FamilyService
+
+        result = await self.db.execute(
+            select(FamilyInvitation).where(FamilyInvitation.token == token)
+        )
+        invitation = result.scalar_one_or_none()
+        if invitation is None:
+            raise ValueError("Invalid invitation token")
+
+        if (
+            invitation.status == FamilyInvitationStatus.PENDING.value
+            and invitation.expires_at < datetime.utcnow()
+        ):
+            invitation.status = FamilyInvitationStatus.EXPIRED.value
+            await self.db.commit()
+            await self.db.refresh(invitation)
+
+        if invitation.status != FamilyInvitationStatus.PENDING.value:
+            raise ValueError(f"This invitation is {invitation.status} and cannot be accepted")
+
+        existing_user = await self.db.execute(select(User).where(User.email == invitation.email))
+        if existing_user.scalar_one_or_none() is not None:
+            raise ValueError("An account with this email already exists")
+
+        user = await self.create_user_in_organization(
+            email=invitation.email,
+            password=password,
+            first_name=invitation.first_name,
+            last_name=invitation.last_name,
+            organization_id=invitation.tenant_id,
+            role=UserRole.VIEWER,
+        )
+
+        # family_members is RLS-protected; establish the invitation's tenant
+        # context before creating the membership row through it.
+        await set_tenant_context_async(self.db, invitation.tenant_id)
+        family_service = FamilyService(self.db, tenant_id=invitation.tenant_id, user=user)
+        member = await family_service.create_member(
+            {
+                "email": invitation.email,
+                "first_name": invitation.first_name,
+                "last_name": invitation.last_name,
+                "relationship_type": invitation.relationship_type,
+                "role": invitation.role,
+                "user_id": user.id,
+                "is_active": True,
+            }
+        )
+
+        invitation.status = FamilyInvitationStatus.ACCEPTED.value
+        invitation.accepted_at = datetime.utcnow()
+        invitation.member_id = member.id
+        await self.db.commit()
+        await self.db.refresh(user)
         return user
 
     async def _create_default_notification_settings(self, user_id: int) -> None:

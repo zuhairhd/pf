@@ -184,6 +184,7 @@ GLOBAL_TABLES = [
     "refresh_tokens",         # Auth system
     "email_verifications",    # Auth system
     "password_resets",        # Auth system
+    "family_invitations",     # Accept-by-token (AUTH-305); same rationale as email_verifications/password_resets
     "notification_settings",  # Per-user preferences (app-level user filtering)
     "system_events",          # System-level logging
 ]

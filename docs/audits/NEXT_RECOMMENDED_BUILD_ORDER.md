@@ -10,9 +10,9 @@
 
 ## Executive Summary
 
-Cards PF-014-DB through REP-2000 (Basic Financial Reports), REP-2001 (Financial Reports UI / Report Center), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), AI-1222 (AI Confidence Scoring), AI-1223 (Dashboard v2), FAM-1303 (Family Budgets), DB-1106A (Family Budget Dashboard Widget UI), FAM-1304 (Allowance and Chore Tracking), DB-1107A (Allowance and Chore Dashboard Widget UI), FAM-1305 (Allowance Payment Posting Through Accounting Engine), DB-1107B (Allowance Payment Dashboard Action Form), DB-1107C (Allowance Payment Reversal Dashboard Action), IMP-701 (Excel Import), IMP-703 (Import UI), GOAL-1401B (Goal Contribution Reversal), and DB-1105B (Family Goal Contribution Reversal Dashboard Action) are **COMPLETE**. The database has 46 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and the dashboard is the AI-centric "Today" landing page — surfacing health score, proactive alerts, confidence-aware recommendations, optimizer shortcuts, commitments, family goals, permission-aware family budgets, and permission-aware chores/allowance. The full allowance lifecycle and the full goal-contribution lifecycle — post → reverse, both via API and dashboard — are now symmetric, users can view Income Statement, Balance Sheet, Cash Flow, Net Worth, and Expense Analysis reports directly in the browser (REP-2001), and the import pipeline supports CSV, SMS, and Excel (`.xlsx`) sources end-to-end through a browser-facing Import Center (`/imports`).
+Cards PF-014-DB through REP-2000 (Basic Financial Reports), REP-2001 (Financial Reports UI / Report Center), DOC-2100/2101 (Document Management and OCR), AI-1214 (What-If Simulator), AI-1211 (Debt Optimizer), AI-1212 (Savings Optimizer), AI-1213 (Goal Planner), AI-1219 (Proactive Alerts), AI-1220 (AI Chat Interface), AI-1221 (AI Memory System), AI-1222 (AI Confidence Scoring), AI-1223 (Dashboard v2), FAM-1303 (Family Budgets), DB-1106A (Family Budget Dashboard Widget UI), FAM-1304 (Allowance and Chore Tracking), DB-1107A (Allowance and Chore Dashboard Widget UI), FAM-1305 (Allowance Payment Posting Through Accounting Engine), DB-1107B (Allowance Payment Dashboard Action Form), DB-1107C (Allowance Payment Reversal Dashboard Action), IMP-701 (Excel Import), IMP-703 (Import UI), GOAL-1401B (Goal Contribution Reversal), DB-1105B (Family Goal Contribution Reversal Dashboard Action), and AUTH-305 (Tenant Member Invitation Flow) are **COMPLETE**. The database has 47 tables with Alembic-managed migrations, RLS+FORCE RLS is active on tenant-scoped tables, the auth gateway is functional, a shared test foundation is in place, and the dashboard is the AI-centric "Today" landing page — surfacing health score, proactive alerts, confidence-aware recommendations, optimizer shortcuts, commitments, family goals, permission-aware family budgets, and permission-aware chores/allowance. The full allowance lifecycle and the full goal-contribution lifecycle — post → reverse, both via API and dashboard — are now symmetric, users can view Income Statement, Balance Sheet, Cash Flow, Net Worth, and Expense Analysis reports directly in the browser (REP-2001), the import pipeline supports CSV, SMS, and Excel (`.xlsx`) sources end-to-end through a browser-facing Import Center (`/imports`), and family onboarding now has a real invite-by-email-and-accept flow instead of manual member activation.
 
-The next card should be **AUTH-305 — Tenant Member Invitation Flow**, closing a gap repeatedly flagged as a known limitation across FAM-1301, FAM-1302, and GOAL-1401A — family member activation still requires a manual PATCH rather than a real invitation/acceptance flow.
+The next card should be **ACC-502 — Opening Balances**, wiring the existing `Account.current_balance` field into a real, idempotent journal entry through the already-proven `AccountingService` engine — a newly created account's starting balance is not currently reflected in the ledger at all.
 
 ---
 
@@ -1047,15 +1047,38 @@ Card 1 (Database) ✅
 
 ---
 
+## Completed Card 44
+
+### Card 44: AUTH-305 — Tenant Member Invitation Flow ✅ DONE
+
+**PLAN_V2 Reference:** AUTH-305 (Tenant Member Invitation)
+**Type:** Feature / Auth
+**Priority:** HIGH
+
+**Completed:**
+- New `FamilyInvitation` model/table (Alembic `f3a8c1d94b7e`), `pending → accepted | cancelled | expired` lifecycle, 7-day expiry, unique bearer token.
+- `POST/GET /family/members/invitations`, `POST .../{id}/cancel` (authenticated, tenant-scoped, `can_manage_members`-gated) and `POST .../accept` (unauthenticated, token-driven, mirrors `/auth/register`/`/auth/reset-password`).
+- Acceptance creates the invited person's `User` inside the inviting tenant and activates their `FamilyMember` via the unchanged `FamilyService.create_member()`, then logs them in.
+- `family_invitations` is intentionally RLS-exempt, matching the documented `email_verifications`/`password_resets` precedent in `app/core/rls.py` — an accept-by-token request has no tenant context yet, so RLS would make the row unreadable to the request that needs it. Tenant isolation for authenticated operations is enforced at the service layer instead. `family_members`/`goals`/`journal_entries`/`journal_lines` RLS is unchanged.
+- Idempotent creation; defense-in-depth rejection of an email that already has an account (single-tenant-per-user architecture).
+- Reuses the existing console-logged-by-default `send_email()` backend — no new/paid email service.
+- 18 new tests; full suite **726 passed, 1 skipped** (up from 708 passed, 1 skipped), zero regressions.
+
+**Remaining:**
+- No resend-invitation endpoint.
+- No UI/template for the flow yet (API-only).
+
+---
+
 ## Exact Recommended Next Card
 
-### Card 44: AUTH-305 — Tenant Member Invitation Flow
+### Card 45: ACC-502 — Opening Balances
 
-**Decision:** `PLAN_V2_CARD_STATUS.md` lists `AUTH-305` as **Partial** — `FamilyMember` already has invitation fields, but there is no invitation endpoint and no email sending; activating a family member still requires a manual `PATCH /family/members/{id}` with `is_active: true`. This exact gap has been called out as a known limitation in at least three prior reports this session (FAM-1301, FAM-1302, GOAL-1401A) and every test fixture in the codebase already works around it with the same two-step create-then-patch pattern (`_add_member`/`_add_family_member` helpers across `test_family_goals.py`, `test_dashboard_widget.py`, `test_goal_contribution_reversal.py`, etc.). Closing it removes a long-standing rough edge from real onboarding rather than opening a new feature area.
+**Decision:** `PLAN_V2_CARD_STATUS.md` lists `ACC-502` as **Partial** — `Account.current_balance` exists as a field, but there is no opening-balance entry flow and no journal-entry auto-generation for it, meaning a newly created account with a non-zero starting balance is not actually reflected in the ledger. This is a well-scoped, low-risk gap that directly reuses the `AccountingService`/journal-entry engine this session has already exercised repeatedly (GOAL-1401A/B, BILL-801A, FAM-1305, ACC-503A) — exactly the kind of "wire an existing field into the real accounting engine" card this session has consistently prioritized.
 
-**What to tell the coding agent for AUTH-305:**
+**What to tell the coding agent for ACC-502:**
 
-> "Implement AUTH-305: Tenant Member Invitation Flow. Add an invitation endpoint (e.g. POST /family/members/{id}/invite or fold invitation into the existing POST /family/members create flow) that sends an invitation email (reuse the existing email backend from NOTIF-1600) with a secure, expiring token, plus an acceptance endpoint (e.g. POST /auth/accept-invitation) that activates the FamilyMember (is_active=true) and links it to a User account -- creating one via the existing signup path if the invited email has no account yet. Do not bypass existing auth/password-hashing flows. Preserve the existing direct PATCH /family/members/{id} activation path for backward compatibility (admins can still activate manually). Respect tenant scoping and RLS throughout. Add tests for: invitation creates a pending, inactive FamilyMember with a token; the acceptance endpoint activates the member and rejects expired/invalid/already-used tokens; a new user account is created when needed and linked correctly; tenant isolation; and full regression."
+> "Implement ACC-502: Opening Balances. When an account is created (or an existing account with no prior journal activity is given an opening balance), post a balanced opening journal entry through the existing AccountingService.create_journal_entry() (do not bypass it or write current_balance directly) -- debit the account for a positive opening balance (or credit for a negative/liability-style one) against a dedicated 'Opening Balance Equity' account (create it via the existing chart-of-accounts seeding pattern if one doesn't already exist), dated as of the account's opening-balance date. Add an opening_balance_journal_entry_id (nullable FK to journal_entries) on Account so this is idempotent -- do not let an account get two opening-balance entries. Respect tenant scoping, RLS, and account-visibility rules exactly as existing posting flows do. Add tests for: creating an account with a non-zero opening balance posts a balanced journal entry, a zero/omitted opening balance posts nothing, repeated opening-balance calls do not duplicate the entry, tenant isolation, RLS, and full regression."
 
 ---
 
